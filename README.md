@@ -10,6 +10,8 @@ Feel free to contact me if you run into permission problems or if you notice any
 
 A video that describes BibFile Manager and walks through all of its functions, including how to link the .bib file on Google Drive with your Overleaf project, is provided at this YouTube link: https://youtu.be/0x-stS2OXwc
 
+An update to BibFile Manager that describes a new search tool is described in this YouTube link: https://youtu.be/PGiTd0DZIvo
+
          %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
          %%%%%%%%%%  Thank you for your interest in BibFile Manager!  %%%%%%%%%
          %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
