@@ -389,7 +389,9 @@
           if (storedInfo['pdf'] && storedInfo.pdf.tagEdited){unsavedChanges = true;}
           var commentIdList = Object.keys(storedInfo);
           for (let commentId of commentIdList){if (storedInfo[commentId].edited){unsavedChanges = true;}}
-          var askText = 'You have made changes without hitting the "Process Changes" button.  Do you want these changes to be processed?';
+          var askText = 'You have made changes without hitting the "Process Changes" button.  Do you want these changes to be processed?\n'+
+                        '   "OK"     = "Yes, please proceed in incorporating the changes into the permanent database!"\n'+
+                        '   "Cancel" = "Nah, I was just messing around! Ignore changes made, do NOT incorporate them into the database!")';
           if (unsavedChanges){if (confirm(askText)){processChanges();}} 
           google.script.host.close();
           google.script.host.editor.focus();
@@ -966,7 +968,12 @@
               $(".statusBarMode")[0].innerHTML = "COMMENT";
           }
           var tagIdList = [];
-          if (!(pdfOrComment.match(/newcomment/)) && storedInfo[pdfOrComment] && storedInfo[pdfOrComment].tagIdList){var tagIdList = storedInfo[pdfOrComment].tagIdList;}
+          if (!(pdfOrComment.match(/newcomment/)) && storedInfo[pdfOrComment] && storedInfo[pdfOrComment].tagIdList){
+              var tagIdList = storedInfo[pdfOrComment].tagIdList;
+          } else if (pdfOrComment.match(/newcomment/)){
+              // get the tag list for the pdf file as a whole and pre-populate the tag menu with that list
+              var tagIdList = storedInfo['pdf'].tagIdList;
+          }
           // when you close or quit a comment summary box need to first make the one button "do you want to edit" button visible again  
           if (tagIdList && tagIdList.length > 0){
               for (let tagBox of tagBoxes){
@@ -1719,9 +1726,7 @@
            }
         });
         //https://stackoverflow.com/questions/33063213/pdf-js-with-text-selection
-        ////////////var url = '//raw.githubusercontent.com/mozilla/pdf.js/ba2edeae/web/compressed.tracemonkey-pldi-09.pdf';
         // Create shortcut to access PDF.js exports.
-    
         pdfjsLib.GlobalWorkerOptions.workerSrc = '//mozilla.github.io/pdf.js/build/pdf.worker.js';
         google.script
               .run
