@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+     <base target="_top">
+     <!-- Required meta tags -->
+     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+     <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+     <link rel="stylesheet" href="//code.jquery.com/ui/1.11.4/themes/smoothness/jquery-ui.css" type="text/css" >
+     <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.4/jquery.min.js" crossorigin="anonymous" type="text/javascript"></script>
+     <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.js" crossorigin="anonymous" type="text/javascript"></script>    
+     <script src="https://ajax.googleapis.com/ajax/libs/d3js/7.0.0/d3.min.js"></script>
+     <link rel="stylesheet" href="//code.jquery.com/ui/1.13.0/themes/base/jquery-ui.css">
+     <link rel="stylesheet" href="/resources/demos/style.css">
+  </head>
+  <style>
+     body {font:15px Arial;}
+     .upsetPlotContainer{position:fixed; top:20px; left:10px; background:#efeed1; border-top:6px solid #483C32; border-bottom:30px solid #483C32; overflow:scroll}
+     #upsetPlot {width:100%}
+     .querySearch{position:fixed; top:40px; left:65%; background:#191970; border-top:5px solid #191970; border-bottom:30px solid #191970;
+                  box-shadow: 0px 20px 20px 0px rgba(0,0,0,0.3); min-width:20%; max-width:70%; min-height:200px; max-height:600px; display:block; z-index:1} 
+     .querySearch textarea {min-width:95%; min-height:200px; max-height:600px; font-family: Verdana, Tahoma, Arial, Helvetica, sans-serif; font-size:18px; overflow:scroll;
+                            border:3px solid grey; background:#ddd; text-align:left; padding-left:10px; padding-top:10px}
+     .helpText{position:fixed; top:30px; left:20%; width: 60%; border:5px solid black; display:none; font-size:14px; background:white; z-index:100; 
+               box-shadow: 0px 20px 20px 0px rgba(0,0,0,0.3); overflow:scroll; border-top:6px solid #033E3E; border-bottom:30px solid #033E3E;}
+     .searchContainer{position:fixed; top:50%; left:50%; background:#efeed1; border-top:6px solid #033E3E; border-bottom:30px solid #033E3E;
+                      box-shadow: 0px 20px 20px 0px rgba(0,0,0,0.3); min-width:40%; max-width:80%; min-height:10%; max-height:800px; z-index:1; overflow:scroll}
+     .searchResults {height:100%; width:100%;}
+     .topicContainer {position:fixed; top:20%; left:5px; background:#ddd; border-top:5px solid #551606; border-bottom:30px solid #551606;
+                      box-shadow: 0px 20px 20px 0px rgba(0,0,0,0.3); min-width:30%; min-height:50px;} 
+     .makeplotBtn {margin-left:5px; background-color:#896dad; color:white; padding-top:2px; text-align:center; position:relative;
+                   padding-bottom:2px; padding-left:5px; padding-right:5px; font-size:15px; border:1px; border-radius:3px;}
+     .makeplotBtn:hover {background-color:#23045f; color: yellow;}
+     .helpBtn {margin-left:5px; background-color:#52595D; color:white; padding-top:2px; text-align:center; position:fixed; right:50%; top:1px; 
+               padding-bottom:2px; padding-left:5px; padding-right:5px; font-size:20px; border: 1px solid black; border-radius:3px;}
+     .helpBtn:hover {background-color:silver; color:black;}
+     .exitBtn {margin-left:5px; background-color:#F4F4F4; color:C1C2C2; padding-top:6px; text-align:center; position:fixed; right:5px; top:1px; 
+               padding-bottom:2px; padding-left:5px; padding-right:5px; font-size:20px; border: 1px solid black; border-radius:3px;}
+     .exitBtn:hover {background-color: #A5A5A5; color: white;}
+     table,
+     th,
+     td {border: 1px solid;}
+     table {width:100%; height:100%; margin: 0 auto; display:block; overflow-x:auto; border-spacing:0; border-collapse:collapse; table-layout:fixed;}
+     tbody {white-space: nowrap;}
+     th,
+     td {padding:5px 10px; border-top-width:0; border-left-width:0; word-wrap:break-word; font-size:20px}
+     th {position:sticky; top:0; background:#fff; vertical-align:bottom; font-size:20px;}
+     th:last-child,
+     td:last-child {border-right-width: 0;}
+     tr:last-child td {border-bottom-width: 0:}
+     textarea {font-size:20px; width:100%;}
+     .helpText {font-size:20px}
+  </style>
+  <body>
+     <button class="helpBtn" onclick="showHideHelp()">HELP!! (toggle show/hide)</button>
+     <button class="exitBtn" onclick="exit()">EXIT the search tool</button>
+     <div class="helpText" id="helpDiv">
+        Steps to use this tool:<br>
+        <ol>
+           <li>Select topics to search among paper and comment tags by clicking on checkboxes in the 
+               <span style="background:#551606; font-weight:bold; color:white;">TOPIC SELECTION MENU</span>.</li>
+           <li>As you click (unclick) topics, the topics will appear (disappear) in the
+               <span style="background:#191970; font-weight:bold; color:white">SEARCH QUERY</span> box.</li>
+           <ul>
+              <li>You can leave the list as they appear in <span style="background:#191970; font-weight:bold; color:white">SEARCH QUERY</span>,
+              or you can compose more complex queries by combining some topics within a single line
+              separated by white space, by directly editing the <span style="background:#191970; font-weight:bold; color:white">SEARCH QUERY</span>
+              box and copy/pasting/cutting items appearing there to re-arrange them.</li>
+              <li>If multiple topics, separated by a single white space, are placed in the same line, only papers having tags containing ALL
+              those topics appearing in that line will be considered.</li>
+              <li>If a "-" sign is placed in front of any topics appearing in a multi-topic line, only papers having ALL those topics 
+              EXCEPT the topic(s) with negative signs will be considered.</li>
+           </ul>
+           <li>Click on the <span style="background:#896dad; font-weight:bold; color:white">"Make Search Plot Using These Topics"</span> button at
+               the top of <span style="background:#191970; font-weight:bold; color:white">SEARCH QUERY</span> to generate a type of "Venn diagram" 
+               of the results, which appear in <span style="background:#483C32; font-weight:bold; color:white;">UPSET PLOT ("VENN" DIAGRAM)</span>.</li>
+           <li>When the plot appears in the <span style="background:#483C32; font-weight:bold; color:white;">UPSET PLOT ("VENN" DIAGRAM)</span>,
+               click on one of the bars to display the papers and comments meeting the represented criteria. The papers/comments will appear in 
+               <span style="background:#033E3E; font-weight:bold; color:white;">SEARCH RESULTS: PAPERS/COMMENTS</span>.
+        </ol>
+        Example: if the following topic checkboxes had been selected in <span style="background:#551606; font-weight:bold; color:white;">TOPIC SELECTION MENU</span>
+        and then the words edited in <span style="background:#191970; font-weight:bold; color:white">SEARCH QUERY</span> to appear as the 3 separate lines below:<br>
+        &nbsp&nbsp&nbsp VLA METALICITY -X-RAY CORE_RADIUS<br>
+        &nbsp&nbsp&nbsp FOSSIL_GROUP<br>
+        &nbsp&nbsp&nbsp ACCRETION<br><br>
+        then what would get represented in the  <span style="background:#483C32; font-weight:bold; color:white;">UPSET PLOT ("VENN" DIAGRAM)</span> are
+        papers or comments whose tagged topics include <b><em>either</em></b>:<br>
+        "ACCRETION"<br>
+        &nbsp&nbsp&nbsp and/or<br>
+        "FOSSIL_GROUP"<br>
+        &nbsp&nbsp&nbsp and/or<br>
+        <b><em>ALL</em></b> of the following: "VLA", "METALICITY", "CORE_RADIUS" but <b><em>NOT</em></b> "X-RAY".<br><br>
+        Each bar in the "upset plot" represents a region of overlap within a Venn diagram.  For example, one bar might be all the papers/comments that
+        have topics including "ACCRETION", "FOSSIL_GROUP", "VLA"+"METALICITY"+"CORE_RADIUS" (and without X-RAY), or in other words, that meet all of the
+        selection criteria.  The other bars will be papers/comments that meet some but not all of these selection criteria. By clicking on the bars, you 
+        can view the papers/comments that uniquely satisfy the criteria associated with the bar.  The criteria associated with a bar are indicated by 
+        colored circles appearing below the plot (e.g., if all the circles under a bar are colored, then the bar represents papers meeting all the criteria).<br><br>
+        <span style="color:blue;"><i>Note: any box on this screen that has a shadow means that the box can be dragged to a different location.
+        A tiny triangle in the lower right corner indicates that the box can be re-sized, like the one you see in this box.</i></span>
+     </div>
+     <div class="hiddenStorage" style="display:none;"></div>
+     <div class="querySearch">
+         <div style="background-color:#191970; color:white; font-weight:bold; font-size:20px; text-align:center;"><span>SEARCH QUERY</span></div>
+         <div style="display:flex; justify-content:center; background-color:#191970">
+            <button class="makeplotBtn" onclick="makePlot()">Make Search Plot Using These Topics</button>
+         </div>
+         <div><textarea class="queryText" id="queryText"></textarea></div> 
+     </div>
+     <div class="upsetPlotContainer">
+        <div style="background-color:#483C32; color:white; font-weight:bold; font-size:20px; text-align:center;"><span>UPSET PLOT ("VENN" DIAGRAM of search results)</span></div>
+        <div id="upsetPlot"></div>
+     </div>
+     <div class="searchContainer">
+        <div style="background-color:#033E3E; color:white; font-weight:bold; font-size:20px; text-align:center;"><span>SEARCH RESULTS: PAPERS/COMMENTS</span></div>
+        <div id="searchResults">Search Results</div>
+     </div>
+     <div class="topicContainer">
+         <div style="background-color:#551606; color:white; font-weight:bold; font-size:20px; text-align:center;"><span>TOPIC SELECTION MENU</span></div>
+         <div style="font-size: 1.2em; display:none;"><span id="selected"></span></div>
+         <summary><div style="font-size: 18px"><span>Select checkboxes below for topics to be used in search query</span></div></summary>
+         <details><div id="view"></div></details>
+     </div>
+  </body>
+  <script>
+     ///////////////////////////////////////////////////////////////////////////////////////
+     /////////////////////////////////////  exitCheck //////////////////////////////////////
+     function exit(){
+        google.script.host.close();
+        google.script.host.editor.focus();
+     }
+     /////////////////////////////////////  exitCheck //////////////////////////////////////
+     ///////////////////////////////////////////////////////////////////////////////////////
+     ///////////////////////////////////////////////////////////////////////////////////////////
+     ///////////////////////////////////// showHideHelp ////////////////////////////////////////
+     function showHideHelp(){
+        var helpDiv = document.getElementById("helpDiv");
+        var displaySetting = helpDiv.style.display;
+        if (displaySetting == 'block'){
+            helpDiv.style.display = 'none';
+        } else {
+            helpDiv.style.display = 'block';
+        }
+     }
+     ////////////////////////////////////////////////////////////////////////////////////////////
+     
+     ///////////////////////////////////////////////////////////////////////////////////////////
+     /////////////////////////////////////// makePlot //////////////////////////////////////////
+     function makePlot(){
+         var spreadsheetInfo = JSON.parse($(".hiddenStorage")[0].innerText);
+         var forUpsetPlot = spreadsheetInfo.forUpsetPlot;
+         // select only those items corresponding to the topics listed in the search query box
+         // read in the search query box: 
+         var searchQuery = $(".queryText")[0].value;
+         if (searchQuery && searchQuery !== undefined && searchQuery !== null && searchQuery.length > 0){
+             searchQuery = searchQuery.split("\n");
+         } else {
+             return;
+         }
+         // if there are multiple words on a line, then those topics should be ALL present. If there are negative signs, that topic must NOT be present
+         var upsetplotData = [];
+         var upsetplotNames = [];
+         for (let i=0; i<searchQuery.length; i++){
+             var thisQueryName = searchQuery[i].replace(/  +/g," ").split(" ").join(" \+ ").replace(/ \+ \-/g," \- ");
+             var thisQueryList = searchQuery[i].replace(/  +/g," ").split(" ");
+             var paperCommentList = forUpsetPlot.paperCommentList;
+             for (let j=0; j<paperCommentList.length; j++){
+                 var thisPaperComment = paperCommentList[j];
+                 var meetsAllQualifications = true;
+                 for (let k=0; k<thisQueryList.length; k++){
+                     var indx = forUpsetPlot[thisPaperComment].taggedTopics.indexOf(thisQueryList[k]);
+                     var isThisTopicTagged = false;
+                     if (indx != -1){isThisTopicTagged = true;} 
+                     if (isThisTopicTagged && thisQueryList[k].charAt(0) == "-"){
+                         // this paper (or comment) has among its tagged topics a topic that has been flagged in the search query as to be excluded
+                         meetsAllQualifications = false;
+                     } else if (!(isThisTopicTagged) && thisQueryList[k].charAt(0) != "-"){
+                         meetsAllQualifications = false;
+                     }
+                 }
+                 if (meetsAllQualifications){
+                     // if this paper (or comment) meets all the qualifications for this search query criterion, then include it in the array
+                     //  determine if this particular search query has already been set up in the array
+                     var thisIndx = upsetplotNames.indexOf(thisQueryName);
+                     if (thisIndx == -1){
+                         upsetplotData.push({"name":thisQueryName, "values":[]});
+                         upsetplotNames.push(thisQueryName);
+                         thisIndx = upsetplotNames.length - 1;
+                     }
+                     upsetplotData[thisIndx].values.push(forUpsetPlot[thisPaperComment].entry);
+                 }
+             }
+         }
+         if (upsetplotData.length > 0){
+             // calculating intersections WITHOUT solo sets
+             const {intersections, soloSets} = formatIntersectionData(upsetplotData); 
+             // putting the solo sets in: to include solo sets with all its data, call this function const allData = insertSoloDataAll(intersections, soloSets)
+             // to include solo sets with only the values that ARE NOT in other sets ie. the outersect of values in the solo sets, call this function 
+             const allData = insertSoloDataOutersect(intersections, soloSets);       
+             // plot the upset plot
+             plotUpset(allData, soloSets, "upsetPlot");
+         }
+     }
+     /////////////////////////////////////// makePlot //////////////////////////////////////////
+     ///////////////////////////////////////////////////////////////////////////////////////////
+     
+     ///////////////////////////////////////////////////////////////////////////////////////////////
+     /////////////////////////////////////// getTopicTree //////////////////////////////////////////
+     function getTopicTree() {
+        google
+           .script
+           .run
+           .withSuccessHandler(function(spreadsheetInfo){
+               // insert the info retrieved from the spreadsheet into the hidden storage area
+               $(".hiddenStorage")[0].innerText = spreadsheetInfo;
+               var info = JSON.parse(spreadsheetInfo);
+               var topicTree = info.topicTree;
+               // Render
+               d3.select('#view')
+                 .append('div')
+                 .call(tree)
+                 .call(updateTree, topicTree);})
+           .makeTopicTree();
+     };
+     //////////////////////////////////////// getTopicTree /////////////////////////////////////////
+     /////////////////////////////////////////////////////////////////////////////////////////////// 
+     
+     /////////////////////////////////////////////////////////////////////////////////////////////// 
+     //////////////////////////////////////// getTopicList /////////////////////////////////////////
+     function getTopicList(){
+         // ==================== creating the textbox with topics selected from the checkbox tree =======================
+         // get the info from the raw list posted in "selected"
+         var checkedBoxes = document.getElementById("selected").textContent.split("\,").map(z => z.trim().replace(/  +/g," ").replace(/ /g,"\_"));
+         var checkedBoxes = ([... new Set(checkedBoxes)]).sort();
+         var queryList = $("#queryText")[0].value;
+         if (!(queryList) || queryList === undefined || queryList === null){queryList = '';} else {queryList = queryList.trim();}
+         if (queryList == ""){
+             // if the textbox is completely blank, place this list into the textbox
+             $("#queryText")[0].value = checkedBoxes.join("\n");
+         } else {
+             // there's content already in the textbox, so check that nothing should be added or removed from this list
+             queryList = queryList.split("\n").filter(z => z.trim() != '').map(z => z.trim().replace(/  +/g," "));
+             for (let i=0; i<queryList.length; i++){
+                 var items = queryList[i].split(" ").map(z => z.trim());
+                 // are there any items here that are no longer box-checked? 
+                 for (let j=0; j<items.length; j++){if (checkedBoxes.indexOf(items[j].replace(/^\-/,"")) == -1){items[j] = 'REMOVE';}}
+                 items = items.filter(z => z != 'REMOVE');
+                 queryList[i] = items.join(" ");
+             }
+             queryList = queryList.filter(z => z.trim() != '').map(z => z.trim());
+             // are there any items in the box-checked list that are not here? 
+             var items = queryList.join(" ").split(" ").map(z => z.replace(/^\-/,""));
+             var newitems = [];
+             for (let i=0; i<checkedBoxes.length; i++){if (items.indexOf(checkedBoxes[i]) == -1){newitems.push(checkedBoxes[i]);}}
+             newitems = newitems.join("\n");
+             queryList = queryList.join("\n");
+             if (newitems.trim() != ''){queryList = queryList + "\n" + newitems;}
+             $("#queryText")[0].value = queryList;
+         }
+     }
+     //////////////////////////////////////// getTopicList /////////////////////////////////////////
+     /////////////////////////////////////////////////////////////////////////////////////////////// 
+     
+     ///////////////////////////////////////////////////////////////////////////////////////////// 
+     //////////////////////////////////////// renderNode /////////////////////////////////////////
+     function renderNode(selection, rcd) {
+         // Node content
+         selection.append('input')
+            .attr('type', 'checkbox')
+            .on('change', function () {d3.select('#selected').text(checkboxValues(d3.select('#view'))); getTopicList();});
+         selection.append('span')
+            .text(rcd.name);
+     }
+     // Return array of ids that is checked
+     function checkboxValues(selection) {
+         return selection.select('.body')
+            .selectAll('input:checked').data().map(d => d.name);
+     }
+     // Recursively append child nodes
+     function nextLevel(selection, node) {
+        const label = selection.append('span');
+        const arrow = label.append('span').classed('arrow', true);
+        label.call(renderNode, node.data);
+        if (!node.hasOwnProperty('children')) return;
+        const items = selection.append('ul')
+            .style('list-style-type', 'none')
+            .selectAll('li')
+            .data(node.children, d => d.id);
+        items.exit().remove();
+        items.enter()
+            .append('li').merge(items)
+            .each(function (d) {d3.select(this).call(nextLevel, d);});
+        label.select('.arrow')
+            .text('▼ ')
+            .on('click', function () {  // Collapse on click
+                const childList = selection.select('ul');
+                if (!childList.size()) return;
+                const expanded = childList.style('display') !== 'none';
+                d3.select(this).text(expanded ? '▶ ' : '▼ ');
+                childList.style('display', expanded ? 'none' : 'inherit');
+            });
+     }
+     //////////////////////////////////////// renderNode /////////////////////////////////////////
+     ///////////////////////////////////////////////////////////////////////////////////////////// 
+     
+     /////////////////////////////////////////////////////////////////////////////////////// 
+     //////////////////////////////////////// tree /////////////////////////////////////////
+     function tree(selection) {
+        // Generate tree view
+        selection
+            .classed('viewport', true)
+            .style('overflow-y', 'scroll')
+            //https://www.reddit.com/r/d3js/comments/9ba93r/how_to_get_a_d3_svg_to_resize_to_parent_div_size/
+            .style('height', '100%')
+            .append('div')
+            .classed('body', true)
+            .style('height', '150px')
+            .style('transform', 'scale(1.0)')
+            .style('transform-origin', 'top left');
+     }
+     //////////////////////////////////////// tree /////////////////////////////////////////
+     /////////////////////////////////////////////////////////////////////////////////////// 
+     
+     ///////////////////////////////////////////////////////////////////////////////////////////// 
+     //////////////////////////////////////// updateTree /////////////////////////////////////////
+     function updateTree(selection, items) {
+        // Update tree data
+        const root = d3.stratify()
+            .id(d => d.id)
+            .parentId(d => d.parent)(items);
+        root.each(function(d){d.name = d.data.name;});
+        selection.select('.body')
+            .call(nextLevel, root);
+        // Remove dummy root node
+        selection.select('.body > span').remove();
+        selection.select('.body > ul').style('padding-left', 0);
+     }
+     //////////////////////////////////////// updateTree /////////////////////////////////////////
+     ///////////////////////////////////////////////////////////////////////////////////////////// 
+     
+     // ============================== creating the "upSet" chart ============================
+     // format intersection data
+     const formatIntersectionData = (data) => {
+        // compiling solo set data - how many values per set
+        const soloSets = [];
+        // nameStr is for the setName, which makes it easy to compile each name would be A, then B, so on..
+        const nameStr = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.substr(0, data.length);
+        data.forEach((x, i) => {soloSets.push({name: x.name, setName: nameStr.substr(i, 1), num: x.values.length, values: x.values,});});
+        // compiling list of intersection names recursively ["A", "AB", "ABC", ...]
+        const getIntNames = (start, end, nameStr) => {  // eg. BCD
+           const name = nameStr.substring(start, end); 
+           // when reaching the last letter
+           if (name.length === 1) {return [name];}
+           const retArr = getIntNames(start + 1, end, nameStr);
+           // eg. for name = BCD, would return [B] + [BC,BCD,BD] + [C,CD,D]
+           return [name[0]].concat(retArr.map((x) => name[0] + x), retArr);
+        };
+        let intNames = getIntNames(0, nameStr.length, nameStr);
+        // removing solo names
+        intNames = intNames.filter((x) => x.length !== 1);
+        let intersections = [];
+        // compile intersections of values for each intersection name
+        intNames.forEach((intName) => {
+           // collecting all values: [pub1arr, pub2arr, ...]
+           const values = intName.split('').map((set) => soloSets.find((x) => x.setName === set).values);
+           // getting intersection
+           // https://stackoverflow.com/questions/37320296/how-to-calculate-intersection-of-multiple-arrays-in-javascript-and-what-does-e
+           const result = values.reduce((a, b) => a.filter((c) => b.includes(c)));
+           intersections.push({
+              name: intName.split('').map((set) => soloSets.find((x) => x.setName === set).name).join(' + '), setName: intName, num: result.length, values: result,});
+        });
+        // taking out all 0s
+        intersections = intersections.filter((x) => x.value !== 0);
+        return { intersections, soloSets };
+     };
+     // include solo sets with all its data
+     const insertSoloDataAll = (intersections, soloSets) => {soloSets.forEach(x => {intersections.push(x);}); return intersections;};
+     // include solo sets with only the values that ARE NOT in other sets
+     const insertSoloDataOutersect = (intersections, soloSets) => {
+        soloSets.forEach(x => {
+            // compile all unique values from other sets except current set
+            const otherSets = [...new Set(soloSets.map(y => y.setName === x.setName ? [] : y.values).flat())];    
+            // subtract otherSets values from current set values
+            const values = x.values.filter(y => !otherSets.includes(y));
+            intersections.push({name: x.name, setName: x.setName, num: values.length, values: values,})       
+        })
+        return intersections;
+     };    
+     // # upset.js
+     const plotUpset = (data, soloSets, plotId) => {
+        // don't show portions of the "venn diagram" that contain zero items
+        data = data.filter(z => z.num > 0);
+        // sort data decreasing
+        var nSetNames = Math.max(...data.map(z => z.setName.length));
+        // don't show portions of the "venn diagram" that are sub-components of other portions, and therefore redundant. 
+        // For example, if the intersection of A-B-C-D contain items 1,2,3,4,5,6,7, and the intersection of A-B-C contain items
+        // 4,5,6 then there is no need to show A-B-C because A-B-C-D already cover this set of common data.  (IN other words, 
+        // if A-B-C-D contain items 4,5,6 then of course A-B-C also contains 4,5,6 as does A-B and A-C and A and B and C. 
+        data = data.filter(z => z.values.length > 0);
+        for (let i in data){data[i].sortOn = (nSetNames - data[i].setName.length) + data[i].setName;}
+        data.sort((a,b) => a.sortOn - b.sortOn || a.sortOn.toString().localeCompare(b.sortOn.toString()));
+        for (let i=0; i<data.length; i++){
+            // is the list of items in data[i] a subset of items listed elsewhere involving more categories? 
+           // "values" below is a list of the papers and comments, formatted for insertion into an html table
+           var thisList = data[i].values;
+           // theseCats is a list of the shorthand categories made up internally by this code (eg, ["A"], ["B"], ["C"], ["A","B","C"], ["A","C"], ["B","C"], etc.)
+           var theseCats = data[i].setName.split("");
+           for (let j=0; j<i; j++){
+              if (data[j].values && data[j].values.length > 0){
+                  // check to see if the ith entry is a subset of the jth entry:
+                  // get the shorthand category labels for this comparison data entry
+                  var catCheck = data[j].setName.split("").filter(z => theseCats.indexOf(z) != -1);
+                  // and the list of values that match those of the ith entry:
+                  var listCheck = data[j].values.filter(z => thisList.indexOf(z) != -1);
+                  var isSubSet = true;
+                  if (!(catCheck) || catCheck === undefined || catCheck === null || catCheck.length != theseCats.length){isSubSet = false;}
+                  if (!(listCheck) || listCheck === undefined || listCheck === null || listCheck.length != thisList.length){isSubSet = false;}
+                  if (isSubSet && data[j].setName.split("").length == theseCats.length){isSubSet = false;}
+                  if (isSubSet){
+                      data[i].values = [];
+                      data[i].setName = [];
+                  }
+              }
+           }
+        }
+        data = data.filter(z => z.values.length > 0);
+        // all sets
+        const allSetNames = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.substr(0, soloSets.length).split('');
+        // position and dimensions
+        const margin = {top:5, right:800, bottom:500, left:20,};
+        const width = 40 * data.length ;
+        const height = 400;
+        // make the canvas
+        var hiddenInfo = $(".hiddenStorage")[0].innerText;
+        var prevPlot = false;
+        if (hiddenInfo && hiddenInfo !== undefined && hiddenInfo !== null && hiddenInfo.length > 0){
+            hiddenInfo = JSON.parse(hiddenInfo);
+            if (hiddenInfo.previousUpsetPlot){prevPlot = true;}
+        }
+        if (prevPlot){d3.select('.plot').remove();} // overwrite any existing upsetPlot
+        var svg = d3.select(`#${plotId}`)
+                    .append('svg').attr('width',width+margin.left+margin.right).attr('height',height+margin.top+margin.bottom).attr('class','plot')
+                    .append('g').attr('transform',`translate(${margin.left},${margin.top})`).attr('fill','white');
+        hiddenInfo.previousUpsetPlot = true;
+        $(".hiddenStorage")[0].innerText = JSON.stringify(hiddenInfo);
+        // make a group for the upset circle intersection things
+        const upsetCircles = svg.append('g').attr('id','upsetCircles').attr('transform',`translate(20,${height + 40})`);
+        const rad = 13;
+        // make the bars
+        const upsetBars = svg.append('g').attr('id', 'upsetBars');
+        const nums = data.map((x) => x.num);
+        // set range for data by domain, and scale by range
+        const xrange = d3.scaleLinear().domain([0, nums.length]).range([0, width]);
+        const yrange = d3.scaleLinear().domain([0, d3.max(nums)]).range([height, 0]);
+        // set axes for graph
+        const xAxis = d3.axisBottom().scale(xrange).tickPadding(2).tickFormat((d, i) => data[i].setName).tickValues(d3.range(data.length));
+        const yAxis = d3.axisLeft().scale(yrange).ticks(d3.max(nums)).tickSize(5).tickFormat(function(e){if (Math.floor(e) != e){return;} return e;});
+        // add X axis
+        upsetBars.append('g').attr('class','x axis').attr('transform',`translate(0,${height})`).attr('fill','none').attr('stroke','black')
+           .attr('stroke-width',1).call(xAxis).selectAll('.tick').remove();
+        // Add the Y Axis
+        upsetBars.append('g').attr('class','y axis').attr('fill','none').attr('stroke','black').attr('stroke-width',1).call(yAxis).selectAll('text')
+           .attr('fill','black').attr('stroke','none');
+        const chart = upsetBars.append('g').attr('transform','translate(1,0)').attr('id','chart');
+        // adding each bar
+        // the width in the attr gives the bar width
+        const bars = chart.selectAll('.bar').data(data).enter().append('rect').attr('class','bar').attr('id',(d) => d.setName).attr('width',20)
+           .attr('x',(d, i) => 9+i*(rad*2.7)).attr('y',(d) => yrange(d.num)).style('fill','#02577b').attr('height',(d) => height-yrange(d.num));
+        const circColors = 
+            ['#910820','#089124','#5D12B7','#12B0B7','#DD9E14','#1432DD','#BCC71C','#C71CBB','#126E03','#E9F007','#F06F07','#4DB6D5'];
+        // circles
+        data.forEach((x,i) => {
+           allSetNames.forEach((y, j) => {upsetCircles.append('circle').attr('cx',i*(rad*2.7)).attr('cy',j*(rad*2.7)).attr('r',rad).attr('class',`set-${x.setName}`)
+              .style('opacity',1).attr('fill',() => {if (x.setName.indexOf(y) !== -1) {return circColors[j % circColors.length];} return '#C0C0C0DD';})});
+           upsetCircles.append('line').attr('id',`setline${i}`).attr('x1',i*(rad*2.7)).attr('y1',allSetNames.indexOf(x.setName[0])*(rad*2.7))
+              .attr('x2',i*(rad*2.7)).attr('y2',allSetNames.indexOf(x.setName[x.setName.length-1])*(rad*2.7)).style('stroke','black').attr('stroke-width',4)
+        });
+        // searchResults
+        bars.on('click',(e,d) => {
+           const allBars = chart.selectAll('.bar').style('fill','#02577b');
+           d3.select('#'+d.setName).style('fill','red');
+           var list = d.values.join('\n');
+           list = '<table><thead><tr><th>Source</th><th width=100%>Title or Quote/Comment</th><th>Page</th></tr></thead><tbody>' + list + '</tbody></table>';
+           $("#searchResults")[0].innerHTML = list;
+        });
+        const nbar = chart.selectAll('.bar').size();
+        var allcircles = document.getElementsByTagName("circle");
+        var circlePositions = [];
+        for (let circ of allcircles){
+            let cpos = circ.getAttribute('cx');
+            circlePositions.push(cpos);
+        }
+        var startLabelsHere = Math.max(...circlePositions) + 2*rad;
+        soloSets.forEach((x,i) => {
+           upsetCircles.append('text').attr('x',startLabelsHere).attr('dy',5+i*(rad*2.7)).attr('text-anchor','start')
+                       .attr('fill','black').style('font-size',20).style('font-weight','bold').text(x.name)});
+    };    
+    // ----------------------------------------------------------------------------    
+    $(function(){$(".searchContainer").draggable();});
+    $(function(){$(".searchResults").resizable();});
+    $(function(){$(".topicContainer").draggable();});
+    $(function(){$(".querySearch").draggable();});
+    $(function(){$(".helpText").draggable().resizable();});
+    $(function(){$("#view").resizable();});
+    $(document).ready(function(){getTopicTree();});
+  </script>
+</html>
