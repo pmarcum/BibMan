@@ -317,14 +317,33 @@ function processTheEntries(){
        // now write this info into the sheet
        // do a quick check to make sure that we know the location of this entry (in case someone may have edited while we wer doing the above)
        var allIds = bibsheet.getRange('fileId').getDisplayValues().map(z => z[0].trim());
-       var thisRowIndx = allIds.indexOf(pdfId) + Number(row1);
+       var statuses = bibsheet.getRange('bibStatus').getValues().map(z => z[0]);
+       // if the file Id is a NASA ADS bibcode rather than a google file ID, then there could hypothetically be multiple occurances of the 
+       // same NASA ADS bibcode.  Look up all of them:
+       var theseRowIndx = allIds.map(function(z,k){if (z==pdfId && (!(statuses[k])||(statuses[k]===undefined)||(statuses[k]===null)||(statuses[k].trim()==''))){
+          return Number(k)+Number(row1);} else {return -1;}}).filter(z => z != -1);
+       theseRowIndx = theseRowIndx.sort();
+       // if the status is equal to '', means that the bibtex is ok and not missing any info and not duplicative with any previously-processed entry.
+       // so set the first of the "theseRowIndx" to a status of '' (which will translate as a checked green box in the spreadsheet), but all others
+       // to a "DUP", if there are more than 1 item within theseRowIndx:
        var entry = makePdfFileListEntry({"pdfId":pdfId, "bibkey":thisBibkey, "title":thisTitle, "bibtex":thisBibtex, "url":thisPdfUrl}); 
-       bibsheet.getRange(thisRowIndx,col1,1,entry.length).setValues([entry]);
+       var formatRange = bibsheet.getRange(row1+1,col1,1,entry.length);
+       bibsheet.getRange(theseRowIndx[0],col1,1,entry.length).setValues([entry]);
        // make sure the format of the row is consistent with the ones above it
        // get a row for the format
-       var formatRange = bibsheet.getRange(row1+1,col1,1,entry.length);
-       var thisRange = bibsheet.getRange(thisRowIndx,col1,1,entry.length);
+       var thisRange = bibsheet.getRange(theseRowIndx[0],col1,1,entry.length);
        formatRange.copyTo(thisRange, {formatOnly:true});
+       if (status == ''){
+           status = 'DUP';
+           thisBibkey = thisBibkey + status;
+           entry = makePdfFileListEntry({"pdfId":pdfId, "bibkey":thisBibkey, "title":thisTitle, "bibtex":thisBibtex, "url":thisPdfUrl}); 
+       }
+       for (let k=1; k<theseRowIndx.length; k++){
+           var thisRowIndx = theseRowIndx[k];
+           bibsheet.getRange(thisRowIndx,col1,1,entry.length).setValues([entry]);
+           thisRange = bibsheet.getRange(thisRowIndx,col1,1,entry.length);
+           formatRange.copyTo(thisRange, {formatOnly:true});
+       }
        if (toBeProcessedIds.length > 1){toBeProcessedIds = toBeProcessedIds.slice(1);} else {toBeProcessedIds = [];}
        var t2 = (new Date()).getTime();
        if (maxTimePerFile==-1){maxTimePerFile=Number(t2)-Number(t1);} else if ((Number(t2)-Number(t1))>maxTimePerFile){maxTimePerFile=(Number(t2)-Number(t1));}
@@ -574,7 +593,7 @@ function writeAsciiFile(){
    // now remove the preceding bibkey
    bibtexs = keytexs.map(z => z.split("|||")[1]);
    // update file contents: 
-   file = DriveApp.getFileById(bibfileId);
+   file = DriveApp.getFileById(bibfileId);  
    file.setContent(bibtexs.join("\n"));    
    SpreadsheetApp.getActiveSpreadsheet().toast('.... You may now select another task ....', '🎉  ... FINISHED WITH PDF LIBRARY UPDATE ... 🎉', 10);
    return;
@@ -758,6 +777,24 @@ function getBibInfo(text){
             tmp = field + tmp;
             bibtex = bibtex.replace(tmp,"");
         }
+       /*
+        // 11/12/2021: put the quotes back into the title: 
+        bibtex = bibtex.replace(/ +\,/g,"\,");
+        bibtex = bibtex.replace(/\, *\n/g,"\,\n");
+        bibtex = bibtex.split("\n");
+        for (let i=0; i<bibtex.length; i++){
+           var thisBibtex = bibtex[i];
+           if (thisBibtex.match(/^title \= /)){
+               thisBibtex = thisBibtex.replace(/\= \{ *\"/,'\= \{');
+               thisBibtex = thisBibtex.replace(/\" *\}\,$/,'\}\,').replace(/\" *\} *$/,'\}');
+               thisBibtex = thisBibtex.replace(/\= \{/,'\= "\{');
+               thisBibtex = thisBibtex.replace(/\}\,$/,'\}"\,').replace(/\}$/,'\}"');
+               bibtex[i] = thisBibtex;
+               break;
+           }
+        }
+        bibtex = bibtex.join("\n");
+        */
      } else {
         bibkey = 'error';
      }
