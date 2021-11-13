@@ -19,6 +19,9 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
+11/13/2021: 
+- Corrected a bug related to detection of duplicated reference paper entries.  While Google Drive file IDs are unique, even if the files contain duplicated information, the NASA ADS bibcode could hypothetically be written multiple times into the PDF FILE LIST spreadsheet.  The original code would not be able to distinguish one entry from the other, as the "file id" (the NASA ADS bibcode) would be exactly the same for the multiple entries.  The code is now able to recognize when duplicated entries of the same NASA ADS bibcode is listed, and to mark the first one as a legitimate entry and the remaining entries as duplicates. 
+
 11/11/2021: 
 - Corrected a bug in which all file ids, regardless of whether they were NASA ADS bibcodes or Google file IDs, got labelled as NASA ADS bibcodes only. (Turns out that not all NASA ADS bibcodes have three periods (...))
 - Decided to change a "policy":  originally, if a bibtex could be found for a new reference entry but the pdf link was not obtainable, the code would not provide the bibtex in the spreadsheet/database ... the code insisted on having a complete set of information before listing the bibtex for a reference.  The code will now give the bibtex retrieved from NASA ADS even if a publically-available pdf link is unavailable or not retrievable through the NASA ADS API.  The code will indicate a green checked-box status for that file, allowing its inclusion in the ASCII bibfile.bib.  However, without a pdf URL, the file cannot be displayed or annotated using BibFile Manager.  A check for the existance of a pdf URL and an error box if one is not present, has also been added to the code. 
