@@ -1,6 +1,6 @@
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
 
-https://docs.google.com/spreadsheets/d/1LaW2smzXypG2KOH-v4VXHQTDnyrzyWC3fm_6SfVqOyA/copy
+https://docs.google.com/spreadsheets/d/1EtOf81EBKfGbSg6stGwZLWkv2V9CgUTANK_pSUcAgso/copy
 
 If you hit the "Copy" button that appears when you follow the above link, a copy of the spreadsheet will appear on the "Shared With Me" folder in your Google Drive. That copy, which will include the attached script that makes BibFile Manager work, is yours to use for building your personal reference library. Ideally, you would move the file down into a folder designated for BibFile Manager work.  In that same folder is where BibFile Manager will generate a .bib file with entries corresponding to the successfully-processed entries in the BibFile Manager spreadsheet. 
 
@@ -19,6 +19,9 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
+02/21/2022:
+- Following some heavy usage of this script after some proposal-writing, and going in and making some small tweaks, I decided to make a new version.  I have no idea what changes (if any) there are from the Dec 12 update!  Might have been some trivial changes like conditional formatting changes. But just to be safe, the above now links to the latest version of this script. 
+
 12/10/2021:
 - Given all the changes being made over time, I need to start referencing using version numbers.  So let's declare the version that exists on 12/10/2021 to be version 121021 ! (The version number will now be part of the Google File name, e.g., "BIBFILE MANAGER 121021")
 - Changed the way that the "PDF URL" column in the "PDF FILE LIST" tab gets colored red as a flag indicating a problem.  Before, the cell would turn red as soon as any text was entered in the "ADS or Google" column, which was annoying when just trying to enter the ADS number to add a new reference to the library.  Now, that column turns red ONLY if there is no URL and if the paper has already been processed by the script (as indicated by some kind of icon in the skinny column just to the left of the "BIBKEY" column on the "PDF FILE LIST" tab. 
