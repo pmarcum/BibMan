@@ -28,6 +28,8 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
 Latest version is 05202022
 05/20/2022:
+- The script will now put extra rows into the spreadsheet for future entries, every time the script is processed for new additions,  so that the user does not have to constantly add thos new rows theirselves. 
+- The script now automatically groups together all the rows except the last couple of rows at the bottom, and folds them up, so that the user does not have to deal with this big long list of entries.  Just click on the toggle "+" or "-" to expand or collapse the group. 
 - Fixed a bug: if the same value in the "ADS or Google" column was typed more than once as new entries, the code crashed because of an inherent assumption that new entries would never be duplicative.  This assumption has now been removed, to allow for that human error. 
 - Removed the hyperlinks to the pdf files in the "bibkey" column.  Seemed silly to hyper-link those bibkeys since the URL is clearly displayed in the rightmost column, and was just inconvenient to have the hyperlink there when a quick copy/paste of the bibkey was intended for some purpose. 
 - The row format was not being applied uniformly to each new entry -- now fixed.
