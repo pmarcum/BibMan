@@ -26,7 +26,15 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
-Latest version is 05202022
+Latest version is 08282023
+08/28/2023: 
+- Fixed a bug that seemed to be intermittent in the last posted version, in which the pdf files often would not get displayed when "LIBRARY FUNCTIONS -> DISPLAY THE PDF selected in spreadsheet" was executed. There is still a problem when the PDF URL is actually a redirect to another URL (most noticeble issues are with links to MNRAS articles, such as https://academic.oup.com/mnras/pdf-lookup/doi/10.1093/mnras/stw292).  A future version will fix this problem by linking to the ArXiv paper instead.
+- Links to JQuery and the PDF.js libraries now point to the most updated versions of those packages.
+- Some future nice-to-haves that I thought of while fixing the bug:
+-     Continuous scrolling rather than having to use the forward/backward buttons to load each page individually
+-     Display all page numbers along the bottom as clickable buttons to take you to that page, and have the page numbers be a different color if comments reside on them.
+-     All comments displayed vertically along the right, and if clicked on, transport you to the relevant page. 
+  
 05/20/2022:
 - The script will now put extra rows into the spreadsheet for future entries, every time the script is processed for new additions,  so that the user does not have to constantly add thos new rows theirselves. 
 - The script now automatically groups together all the rows except the last couple of rows at the bottom, and folds them up, so that the user does not have to deal with this big long list of entries.  Just click on the toggle "+" or "-" to expand or collapse the group. 
