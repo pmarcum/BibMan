@@ -26,7 +26,10 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
-Latest version is 08282023
+Latest version is 08292023
+
+08/29/2023: 
+- Fixed an irritating feature in which the pdf file would occassionally get cropped at the top.  The pdf files now display completely without having to mess around with the zoom.
 
 08/28/2023: 
 - Fixed a bug that seemed to be intermittent in the last posted version, in which the pdf files often would not get displayed when "LIBRARY FUNCTIONS -> DISPLAY THE PDF selected in spreadsheet" was executed. There is still a problem when the PDF URL is actually a redirect to another URL (most noticeble issues are with links to MNRAS articles, such as https://academic.oup.com/mnras/pdf-lookup/doi/10.1093/mnras/stw292).  A future version will fix this problem by linking to the ArXiv paper instead.
