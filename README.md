@@ -26,9 +26,13 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
-Latest version is 08292023
+Latest version is 08292023-2
 
-08/29/2023: 
+08/29/2023 (PM): 
+- Noticed that some pdf files are getting just the very top of the page clipped, so made some additional tweaks to prevent the cropping.
+- Aesthetics change:  gave the top tag menu a light gray background to distinguish it from the canvas where the pdf file appears. 
+
+08/29/2023 (AM): 
 - Fixed an irritating feature in which the pdf file would occassionally get cropped at the top.  The pdf files now display completely without having to mess around with the zoom.
 
 08/28/2023: 
