@@ -1,3 +1,5 @@
+NOTICE:  A *MAJOR* update is planned for BibFile-Manager!  A link to the new version, including change description, will be posted by 9/8/2023 Pacific Time.  If you are planning on downloading this software, please wait until the new version is released! 
+
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
 https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5yUc/copy
 
