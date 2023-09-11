@@ -38,6 +38,9 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
 Latest version is 09102023
 
+09/11/2023: 
+- Renamed "Bibfile Manager" to be "BibMan" instead, and created a BibMan logo that appears on the spreadsheet as well as this repository. (The logo was put into version 09102023 without updating the version number). 
+
 09/10/2023:
 - I changed the way that the drop-down tag menus are presented.  In the previous version, the menus were "twitchy", disappearing if your mouse accidentally veered off the edge of a tag menu.  Now, if you momentarily fall off the edge of a menu, the menu will not instantly disappear.  Also, the dropdown menus are spaced out a bit more in the horizontal direction to make selection a bit easier.   This seemingly small change necessitated a lot of internal code re-writing. While I was in there, I also did some code clean-up (removing functions no longer called, etc.)  The menus will now fold out to the right or to the left depending on whether the top-level button is on the right or left side of the screen, to insure that the menus do not end up getting cropped out by the edges of the screen.
 - Buttons now activate the functions for displaying the pdf, searching on tags, and updating the library.  The drop-down menu that used to be at the top is now gone and superceded by these buttons. 
