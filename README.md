@@ -1,3 +1,5 @@
+https://github.com/pmarcum/BibFile-Manager/blob/main/BibManLogo.png
+
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
 https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5yUc/copy
 
