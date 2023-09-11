@@ -6,26 +6,28 @@
       <font size="10"><b>Bib</b></font><font size="5">file</font> <font size="10"><b>Man</b></font><font size="5">ager</font>
 </p>
 
-The below is a link to the BibFile Manager spreadsheet on Google Drive:
+The below is a link to the BibMan (BibFile Manager) spreadsheet on Google Drive:
 https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5yUc/copy
 
-If you hit the "Copy" button that appears when you follow the above link, a copy of the spreadsheet will appear on the "Shared With Me" folder in your Google Drive. That copy, which will include the attached script that makes BibFile Manager work, is yours to use for building your personal reference library. Ideally, you would move the file down into a folder designated for BibFile Manager work.  In that same folder is where BibFile Manager will generate a .bib file with entries corresponding to the successfully-processed entries in the BibFile Manager spreadsheet. 
+If you hit the "Copy" button that appears when you follow the above link, a copy of the spreadsheet will appear on the "Shared With Me" folder in your Google Drive. That copy, which will include the attached script that makes BibMan work, is yours to use for building your personal reference library. Ideally, you would move the file down into a folder designated for BibMan activities.  In that same folder is where BibMan will generate a .bib file with entries corresponding to the successfully-processed entries in the BibMan spreadsheet. 
 
-The script should be ready to start accepting new references in order to build your library, right out of the box.  You may have to "accept permissions" when you try running "LIBRARY FUNCTIONS -> UPDATE LIBRARY" the first time. More specifically, to get through the authorizations (a one-time only task): 
+~~The script should be ready to start accepting new references in order to build your library, right out of the box.  You may have to "accept permissions" when you try running "LIBRARY FUNCTIONS -> UPDATE LIBRARY" the first time. More specifically, to get through the authorizations (a one-time only task): 
 
 "Authorization Required" --> click on the GREEN "Continue" 
 "Choose an account" --> select the Google Account / email that you wish to use by clicking on it.
 "Google hasn't verified this app":  
     --> scroll to the bottom and click on the small grey underlined "Advanced" in lower left corner.
     --> scroll down to bottom and click on small grey underlined "Go to createVotingSystem (unsafe)" at the very bottom.
-"createVotingSystem wants to access your Google Account" --> scroll to the bottom and click the "Allow" button.
-After the above steps, you will be able to run the scripts. 
+"Bibfile Manager wants to access your Google Account" --> scroll to the bottom and click the "Allow" button.
+After the above steps, you will be able to run the scripts. ~~
+
+The above has now been replaced with buttons that clearly indicate the 3 functions of BibMan:  Updating the library, displaying the Pdf file, and searching for tagged items within the library. 
 
 Feel free to contact me if you run into permission problems or if you notice any bugs as you use the code. 
 
-A video that describes BibFile Manager and walks through all of its functions, including how to link the .bib file on Google Drive with your Overleaf project, is provided at this YouTube link: https://youtu.be/0x-stS2OXwc
+A video that describes BibMan and walks through all of its functions, including how to link the .bib file on Google Drive with your Overleaf project, is provided at this YouTube link: https://youtu.be/0x-stS2OXwc (made before version 09102023, the update introducing buttons in the top menu)
 
-An update to BibFile Manager that describes a new search tool is described in this YouTube link: https://youtu.be/PGiTd0DZIvo
+An update to BibMan that describes a new search tool is described in this YouTube link: https://youtu.be/PGiTd0DZIvo  (made before version 09102023, the update to buttons in the top menu)
 
          %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
          %%%%%%%%%%  Thank you for your interest in BibFile Manager!  %%%%%%%%%
