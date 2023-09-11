@@ -3,7 +3,7 @@
        width=150
        style="display:inline-block;padding-right:10px"
        alt="BibMan-Logo">
-      <font size="5" color="red"><b>Bib</b></font>file <font size="5" color="red"><b>Man</b></font>ager
+      <font size="5"> $${\color{red}><b>Bib</b>}$$file $${\color{red}<b>Man</b>}$$ager </font>
 </p>
 
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
