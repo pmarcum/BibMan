@@ -1,6 +1,6 @@
 <p style="position: relative; overflow:auto">
   <img src="https://github.com/pmarcum/BibFile-Manager/blob/main/BibManLogo.png"
-       width=300
+       width=100
        style="display:inline-block;padding-right:10px"
        alt="BibMan-Logo">
       <font size="3"><b>Bib</b>file <b>Man</b>ager</font>
