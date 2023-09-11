@@ -11,7 +11,8 @@ https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5
 
 If you hit the "Copy" button that appears when you follow the above link, a copy of the spreadsheet will appear on the "Shared With Me" folder in your Google Drive. That copy, which will include the attached script that makes BibMan work, is yours to use for building your personal reference library. Ideally, you would move the file down into a folder designated for BibMan activities.  In that same folder is where BibMan will generate a .bib file with entries corresponding to the successfully-processed entries in the BibMan spreadsheet. 
 
-~~The script should be ready to start accepting new references in order to build your library, right out of the box.  You may have to "accept permissions" when you try running "LIBRARY FUNCTIONS -> UPDATE LIBRARY" the first time. More specifically, to get through the authorizations (a one-time only task): 
+~~The script should be ready to start accepting new references in order to build your library, right out of the box.  You may have to "accept permissions" when you try running "LIBRARY FUNCTIONS -> UPDATE LIBRARY" the first time. More specifically, to get through the authorizations (a one-time only task):~~
+BibMan functions are now implemented through buttons that clearly indicate their functionality, instead of the drop-down menu, which are:  (1) updating the library, (2) displaying the Pdf file, and (3) searching for tagged items within the library. 
 
 "Authorization Required" --> click on the GREEN "Continue" 
 "Choose an account" --> select the Google Account / email that you wish to use by clicking on it.
@@ -19,9 +20,8 @@ If you hit the "Copy" button that appears when you follow the above link, a copy
     --> scroll to the bottom and click on the small grey underlined "Advanced" in lower left corner.
     --> scroll down to bottom and click on small grey underlined "Go to createVotingSystem (unsafe)" at the very bottom.
 "Bibfile Manager wants to access your Google Account" --> scroll to the bottom and click the "Allow" button.
-After the above steps, you will be able to run the scripts. ~~
+After the above steps, you will be able to run the scripts.
 
-The above has now been replaced with buttons that clearly indicate the 3 functions of BibMan:  Updating the library, displaying the Pdf file, and searching for tagged items within the library. 
 
 Feel free to contact me if you run into permission problems or if you notice any bugs as you use the code. 
 
