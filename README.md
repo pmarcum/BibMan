@@ -1,5 +1,3 @@
-NOTICE:  A *MAJOR* update is planned for BibFile-Manager!  A link to the new version, including change description, will be posted by 9/8/2023 Pacific Time.  If you are planning on downloading this software, please wait until the new version is released! 
-
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
 https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5yUc/copy
 
@@ -28,7 +26,10 @@ An update to BibFile Manager that describes a new search tool is described in th
 ================================
          Updates: 
 ================================
-Latest version is 08292023-2
+Latest version is 09102023
+
+09/10/2023:
+- Changed the way that the drop-down tag menus are presented.  In the previous version, the menus were "twitchy", disappearing if your mouse accidentally veered off the edge of a tag menu.  Now, if you momentarily fall off the edge of a menu, the menu will not instantly disappear.  Also, the dropdown menus are spaced out a bit more in the horizontal direction to make selection a bit easier.   This seemingly small change necessitated a lot of internal code re-writing. While I was in there, I also did some code clean-up (removing functions no longer called, etc.)  The menus will now fold out to the right or to the left depending on whether the top-level button is on the right or left side of the screen, to insure that the menus do not end up getting cropped out by the edges of the screen. 
 
 08/29/2023 (PM): 
 - Noticed that some pdf files are getting just the very top of the page clipped, so made some additional tweaks to prevent the cropping.
