@@ -1,9 +1,9 @@
 <p style="position: relative; overflow:auto">
   <img src="https://github.com/pmarcum/BibFile-Manager/blob/main/BibManLogo.png"
-       width=100
+       width=150
        style="display:inline-block;padding-right:10px"
        alt="BibMan-Logo">
-      <font size="3"><b>Bib</b>file <b>Man</b>ager</font>
+      <font size="5"><span style="color:red;"><b>Bib</b></span>file <span style="color:red;"><b>Man</b></span>ager</font>
 </p>
 
 The below is a link to the BibFile Manager spreadsheet on Google Drive:
