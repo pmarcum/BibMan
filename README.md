@@ -1,5 +1,5 @@
 <p style="position: relative; overflow:auto">
-  <img src="https://github.com/pmarcum/BibFile-Manager/blob/main/BibManLogo.png"
+  <img src="https://github.com/pmarcum/BibMan/blob/main/BibManLogoHeader.png"
        width=150
        style="display:inline-block;padding-right:10px"
        alt="BibMan-Logo">
