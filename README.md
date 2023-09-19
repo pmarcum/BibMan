@@ -37,7 +37,10 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
          Updates: 
 ================================
-Latest version is 09102023
+Latest version is 09192023
+
+09/19/2023:
+- Despite the previous modifications, I encountered some pdf files that got cut off at the bottom (by just a little bit) when displayed. This latest version now preserves all of the pdf pages and applies scaling that does not allow any part of the pages to get cut off. 
 
 09/11/2023: 
 - Renamed "Bibfile Manager" to be "BibMan" instead, and created a BibMan logo that appears on the spreadsheet as well as this repository. (The logo was put into version 09102023 without updating the version number). 
