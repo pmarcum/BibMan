@@ -7,7 +7,7 @@
 </p>
 
 The below is a link to the BibMan (BibFile Manager) spreadsheet on Google Drive:
-https://docs.google.com/spreadsheets/d/1eZVHgxqBXomONq_zgJJus3CRYJh_Gxq6o6cP9dC5yUc/copy
+https://docs.google.com/spreadsheets/d/14OdB0G3kgNXt2zQWM3qWlDrSDLQWgn7pkUQ8V4cuL2E/copy
 
 If you hit the "Copy" button that appears when you follow the above link, a copy of the spreadsheet will appear on the "Shared With Me" folder in your Google Drive. That copy, which will include the attached script that makes BibMan work, is yours to use for building your personal reference library. Ideally, you would move the file down into a folder designated for BibMan activities.  In that same folder is where BibMan will generate a .bib file with entries corresponding to the successfully-processed entries in the BibMan spreadsheet. 
 
@@ -37,7 +37,14 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
          Updates: 
 ================================
-Latest version is 09192023
+Latest version is 10132023
+
+10/13/2023:
+- Finally, a feature I've been wanting to implement since the get-go:  BibMan now allows continuous scrolling when displaying a PDF file! (You no longer have to click on the page-counter to navigate from one page to the next.) This change required a significant internal restructuring in some areas of the code, particularly those related to annotation/tagging/commenting/highlighting.
+- As part of this major shift towards scrolling through the PDF file, a new thumbnail strip along the left side of the display now appears, giving a preview of all pages in the document.  In this new version, to jump to a page (if you don't want to scroll to it), the user clicks on the thumbnail corresponding to the desired page.  The textbox that used to come up, telling what pages that comments are located on, has been removed. In its place, the thumbnails show the comments.  Also, the page numbers along the thumbnails turn violet if one or more comments are on them.  As the user adds comments to a file, the corresponding page numbers turn aqua (the same color as the highlight of new comments), to indicate a new comment now exists on that page(s). 
+- A "Help" button has been added, providing a modular, easy-to-navigate user guide.
+- The buttons along the top slight changed in appearance.
+- Some additional tweaks were done to the code to keep pieces of the drop-down tagging menus from lingering when their parent menus have already timed-out. (Still needs a bit more work, though, as ocassionally I still see this "orphan menu" effect). 
 
 09/19/2023:
 - Despite the previous modifications, I encountered some pdf files that got cut off at the bottom (by just a little bit) when displayed. This latest version now preserves all of the pdf pages and applies scaling that does not allow any part of the pages to get cut off. 
