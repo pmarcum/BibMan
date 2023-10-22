@@ -37,7 +37,10 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
          Updates: 
 ================================
-Latest version is 10192023
+Latest version is 10212023
+
+10/21/2023:
+- A bug was fixed related to the situation when more than 1 Overleaf project name is listed in the yellow cell above the "BIBTEX ENTRY" column.  There was a "return" in the function that put the new BibMan files into the github repository, as the multiple overleaf projects were being looped over, resulting in only the first overleaf project getting the freshest .bib file being uploaded to the Overleaf project.  The "return" was removed, allowing all Overleaf projects to get uploaded with the latest version of your .bib file. 
 
 10/19/2023: 
 - I found a bug that was causing a mis-translation between the page that was being displayed and the thumbnail that was highlighted in blue that was supposed to be the same page.  This effect was noticed only on very large (100-page) documents, so I suspect there was some kind of rounding error that only became noticable when the page size was appreciable.  That part of the code was completely re-written so that no computation is now done to determine what page is being displayed (which previously was computed by taking the total scrollbar length and then dividing by the number of pages in the document, and then determining the fraction that the scrollbar had moved down).  Rather, now the visible page is determined more directly, by performing a .getBoundingClientRect() on every div holding a page canvas, and then finding all the divs that have some portion of their length (between .getBoundingClientRect().top and .getBoundingClientRect().bottom) that lay between the top and bottom of the visible port.  This strategy works beautifully (but perhaps at the expense of a bit more computing time).  Clicking on the thumbnail to go to that corresponding page now works flawlessly, as well, by ditching the computation of where the page should go based on the scroll bar and instead looking up the div's .getBoundingClientRect().top and forcing that value to corresspond to the top of the viewport (previously, sometimes the page would appear scooted down from the top ... again indicating a round-off error in the translation between scroll-length and page number).
