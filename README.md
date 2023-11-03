@@ -37,7 +37,10 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
          Updates: 
 ================================
-Latest version is 10212023
+Latest version is 11022023
+
+11/02/2023:
+- A minor bug emerged when there are no Overleaf projects listed in the yellow cell on the PDF FILE LIST page.  Fixed now!
 
 10/21/2023:
 - A bug was fixed related to the situation when more than 1 Overleaf project name is listed in the yellow cell above the "BIBTEX ENTRY" column.  There was a "return" in the function that put the new BibMan files into the github repository, as the multiple overleaf projects were being looped over, resulting in only the first overleaf project getting the freshest .bib file being uploaded to the Overleaf project.  The "return" was removed, allowing all Overleaf projects to get uploaded with the latest version of your .bib file. 
