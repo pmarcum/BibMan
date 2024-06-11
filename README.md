@@ -37,7 +37,10 @@ An update to BibMan that describes a new search tool is described in this YouTub
 ================================
          Updates: 
 ================================
-Latest version is 11022023
+Latest version is 06102024
+
+06/10/2024:
+- A new feature has been implemented which automatically installs a GitHub WorkFlow Actions file into the github repository that the paper/proposal/document is being stored in. This Actions file whittles the .bib file(s) present in the repository down to only those entries actually used in the .tex file(s) in the repository, and is placed in a new .bib file called 'pruned.bib'.  This pruned.bib file might be handy when submitting a paper for publication and to avoid having to share some ginormous master .bib file.  See this repository for a copy of this actions file if you wish to install it manually rather than letting BibMan install it: https://github.com/pmarcum/pruneMyBibfile.   This Actions file is triggered whenever a .bib or .tex file in the repository is changed or added to the repository, and a new pruned.bib file is produced. If Overleaf is synced to github, then the pruned.bib file will be pulled over into your Overleaf project when you perform syncing. 
 
 11/02/2023:
 - A minor bug emerged when there are no Overleaf projects listed in the yellow cell on the PDF FILE LIST page.  Fixed now!
