@@ -1,0 +1,854 @@
+# BibMan synonym pairs — atomic ionization states
+# Source: programmatically generated in bibman_server.py
+# Format: "Symbol Roman" <TAB> alias (English name, bracket notation, charge notation)
+# e.g. "O III<TAB>doubly ionized oxygen"  "Fe II<TAB>[Fe II]"
+# Format: two tab-separated columns, one pair per line.
+# term_a	term_b
+# Lines starting with # are comments and are ignored.
+#
+H I	neutral H
+H I	neutral hydrogen
+H I	hydrogen I
+H I	[H I]
+He I	neutral He
+He I	neutral helium
+He I	helium I
+He I	[He I]
+He II	singly ionized He
+He II	singly ionized helium
+He II	helium II
+He II	[He II]
+He II	He+
+He II	He1+
+Li I	neutral Li
+Li I	neutral lithium
+Li I	lithium I
+Li I	[Li I]
+Li II	singly ionized Li
+Li II	singly ionized lithium
+Li II	lithium II
+Li II	[Li II]
+Li II	Li+
+Li II	Li1+
+Li III	doubly ionized Li
+Li III	doubly ionized lithium
+Li III	lithium III
+Li III	[Li III]
+Li III	Li2+
+Li III	Li2plus
+C I	neutral C
+C I	neutral carbon
+C I	carbon I
+C I	[C I]
+C II	singly ionized C
+C II	singly ionized carbon
+C II	carbon II
+C II	[C II]
+C II	C+
+C II	C1+
+C III	doubly ionized C
+C III	doubly ionized carbon
+C III	carbon III
+C III	[C III]
+C III	C2+
+C III	C2plus
+C IV	triply ionized C
+C IV	triply ionized carbon
+C IV	carbon IV
+C IV	[C IV]
+C IV	C3+
+C IV	C3plus
+C V	quadruply ionized C
+C V	quadruply ionized carbon
+C V	carbon V
+C V	[C V]
+C V	C4+
+C V	C4plus
+C VI	quintuply ionized C
+C VI	quintuply ionized carbon
+C VI	carbon VI
+C VI	[C VI]
+C VI	C5+
+C VI	C5plus
+N I	neutral N
+N I	neutral nitrogen
+N I	nitrogen I
+N I	[N I]
+N II	singly ionized N
+N II	singly ionized nitrogen
+N II	nitrogen II
+N II	[N II]
+N II	N+
+N II	N1+
+N III	doubly ionized N
+N III	doubly ionized nitrogen
+N III	nitrogen III
+N III	[N III]
+N III	N2+
+N III	N2plus
+N IV	triply ionized N
+N IV	triply ionized nitrogen
+N IV	nitrogen IV
+N IV	[N IV]
+N IV	N3+
+N IV	N3plus
+N V	quadruply ionized N
+N V	quadruply ionized nitrogen
+N V	nitrogen V
+N V	[N V]
+N V	N4+
+N V	N4plus
+N VI	quintuply ionized N
+N VI	quintuply ionized nitrogen
+N VI	nitrogen VI
+N VI	[N VI]
+N VI	N5+
+N VI	N5plus
+N VII	sextuply ionized N
+N VII	sextuply ionized nitrogen
+N VII	nitrogen VII
+N VII	[N VII]
+N VII	N6+
+N VII	N6plus
+O I	neutral O
+O I	neutral oxygen
+O I	oxygen I
+O I	[O I]
+O II	singly ionized O
+O II	singly ionized oxygen
+O II	oxygen II
+O II	[O II]
+O II	O+
+O II	O1+
+O III	doubly ionized O
+O III	doubly ionized oxygen
+O III	oxygen III
+O III	[O III]
+O III	O2+
+O III	O2plus
+O IV	triply ionized O
+O IV	triply ionized oxygen
+O IV	oxygen IV
+O IV	[O IV]
+O IV	O3+
+O IV	O3plus
+O V	quadruply ionized O
+O V	quadruply ionized oxygen
+O V	oxygen V
+O V	[O V]
+O V	O4+
+O V	O4plus
+O VI	quintuply ionized O
+O VI	quintuply ionized oxygen
+O VI	oxygen VI
+O VI	[O VI]
+O VI	O5+
+O VI	O5plus
+O VII	sextuply ionized O
+O VII	sextuply ionized oxygen
+O VII	oxygen VII
+O VII	[O VII]
+O VII	O6+
+O VII	O6plus
+O VIII	septuply ionized O
+O VIII	septuply ionized oxygen
+O VIII	oxygen VIII
+O VIII	[O VIII]
+O VIII	O7+
+O VIII	O7plus
+Ne I	neutral Ne
+Ne I	neutral neon
+Ne I	neon I
+Ne I	[Ne I]
+Ne II	singly ionized Ne
+Ne II	singly ionized neon
+Ne II	neon II
+Ne II	[Ne II]
+Ne II	Ne+
+Ne II	Ne1+
+Ne III	doubly ionized Ne
+Ne III	doubly ionized neon
+Ne III	neon III
+Ne III	[Ne III]
+Ne III	Ne2+
+Ne III	Ne2plus
+Ne IV	triply ionized Ne
+Ne IV	triply ionized neon
+Ne IV	neon IV
+Ne IV	[Ne IV]
+Ne IV	Ne3+
+Ne IV	Ne3plus
+Ne V	quadruply ionized Ne
+Ne V	quadruply ionized neon
+Ne V	neon V
+Ne V	[Ne V]
+Ne V	Ne4+
+Ne V	Ne4plus
+Ne VI	quintuply ionized Ne
+Ne VI	quintuply ionized neon
+Ne VI	neon VI
+Ne VI	[Ne VI]
+Ne VI	Ne5+
+Ne VI	Ne5plus
+Ne VII	sextuply ionized Ne
+Ne VII	sextuply ionized neon
+Ne VII	neon VII
+Ne VII	[Ne VII]
+Ne VII	Ne6+
+Ne VII	Ne6plus
+Ne VIII	septuply ionized Ne
+Ne VIII	septuply ionized neon
+Ne VIII	neon VIII
+Ne VIII	[Ne VIII]
+Ne VIII	Ne7+
+Ne VIII	Ne7plus
+Ne IX	octuply ionized Ne
+Ne IX	octuply ionized neon
+Ne IX	neon IX
+Ne IX	[Ne IX]
+Ne IX	Ne8+
+Ne IX	Ne8plus
+Ne X	nonuply ionized Ne
+Ne X	nonuply ionized neon
+Ne X	neon X
+Ne X	[Ne X]
+Ne X	Ne9+
+Ne X	Ne9plus
+Na I	neutral Na
+Na I	neutral sodium
+Na I	sodium I
+Na I	[Na I]
+Na II	singly ionized Na
+Na II	singly ionized sodium
+Na II	sodium II
+Na II	[Na II]
+Na II	Na+
+Na II	Na1+
+Na III	doubly ionized Na
+Na III	doubly ionized sodium
+Na III	sodium III
+Na III	[Na III]
+Na III	Na2+
+Na III	Na2plus
+Na IV	triply ionized Na
+Na IV	triply ionized sodium
+Na IV	sodium IV
+Na IV	[Na IV]
+Na IV	Na3+
+Na IV	Na3plus
+Na V	quadruply ionized Na
+Na V	quadruply ionized sodium
+Na V	sodium V
+Na V	[Na V]
+Na V	Na4+
+Na V	Na4plus
+Na VI	quintuply ionized Na
+Na VI	quintuply ionized sodium
+Na VI	sodium VI
+Na VI	[Na VI]
+Na VI	Na5+
+Na VI	Na5plus
+Na VII	sextuply ionized Na
+Na VII	sextuply ionized sodium
+Na VII	sodium VII
+Na VII	[Na VII]
+Na VII	Na6+
+Na VII	Na6plus
+Na VIII	septuply ionized Na
+Na VIII	septuply ionized sodium
+Na VIII	sodium VIII
+Na VIII	[Na VIII]
+Na VIII	Na7+
+Na VIII	Na7plus
+Na IX	octuply ionized Na
+Na IX	octuply ionized sodium
+Na IX	sodium IX
+Na IX	[Na IX]
+Na IX	Na8+
+Na IX	Na8plus
+Na X	nonuply ionized Na
+Na X	nonuply ionized sodium
+Na X	sodium X
+Na X	[Na X]
+Na X	Na9+
+Na X	Na9plus
+Mg I	neutral Mg
+Mg I	neutral magnesium
+Mg I	magnesium I
+Mg I	[Mg I]
+Mg II	singly ionized Mg
+Mg II	singly ionized magnesium
+Mg II	magnesium II
+Mg II	[Mg II]
+Mg II	Mg+
+Mg II	Mg1+
+Mg III	doubly ionized Mg
+Mg III	doubly ionized magnesium
+Mg III	magnesium III
+Mg III	[Mg III]
+Mg III	Mg2+
+Mg III	Mg2plus
+Mg IV	triply ionized Mg
+Mg IV	triply ionized magnesium
+Mg IV	magnesium IV
+Mg IV	[Mg IV]
+Mg IV	Mg3+
+Mg IV	Mg3plus
+Mg V	quadruply ionized Mg
+Mg V	quadruply ionized magnesium
+Mg V	magnesium V
+Mg V	[Mg V]
+Mg V	Mg4+
+Mg V	Mg4plus
+Mg VI	quintuply ionized Mg
+Mg VI	quintuply ionized magnesium
+Mg VI	magnesium VI
+Mg VI	[Mg VI]
+Mg VI	Mg5+
+Mg VI	Mg5plus
+Mg VII	sextuply ionized Mg
+Mg VII	sextuply ionized magnesium
+Mg VII	magnesium VII
+Mg VII	[Mg VII]
+Mg VII	Mg6+
+Mg VII	Mg6plus
+Mg VIII	septuply ionized Mg
+Mg VIII	septuply ionized magnesium
+Mg VIII	magnesium VIII
+Mg VIII	[Mg VIII]
+Mg VIII	Mg7+
+Mg VIII	Mg7plus
+Mg IX	octuply ionized Mg
+Mg IX	octuply ionized magnesium
+Mg IX	magnesium IX
+Mg IX	[Mg IX]
+Mg IX	Mg8+
+Mg IX	Mg8plus
+Mg X	nonuply ionized Mg
+Mg X	nonuply ionized magnesium
+Mg X	magnesium X
+Mg X	[Mg X]
+Mg X	Mg9+
+Mg X	Mg9plus
+Al I	neutral Al
+Al I	neutral aluminum
+Al I	aluminum I
+Al I	[Al I]
+Al II	singly ionized Al
+Al II	singly ionized aluminum
+Al II	aluminum II
+Al II	[Al II]
+Al II	Al+
+Al II	Al1+
+Al III	doubly ionized Al
+Al III	doubly ionized aluminum
+Al III	aluminum III
+Al III	[Al III]
+Al III	Al2+
+Al III	Al2plus
+Al IV	triply ionized Al
+Al IV	triply ionized aluminum
+Al IV	aluminum IV
+Al IV	[Al IV]
+Al IV	Al3+
+Al IV	Al3plus
+Al V	quadruply ionized Al
+Al V	quadruply ionized aluminum
+Al V	aluminum V
+Al V	[Al V]
+Al V	Al4+
+Al V	Al4plus
+Al VI	quintuply ionized Al
+Al VI	quintuply ionized aluminum
+Al VI	aluminum VI
+Al VI	[Al VI]
+Al VI	Al5+
+Al VI	Al5plus
+Al VII	sextuply ionized Al
+Al VII	sextuply ionized aluminum
+Al VII	aluminum VII
+Al VII	[Al VII]
+Al VII	Al6+
+Al VII	Al6plus
+Al VIII	septuply ionized Al
+Al VIII	septuply ionized aluminum
+Al VIII	aluminum VIII
+Al VIII	[Al VIII]
+Al VIII	Al7+
+Al VIII	Al7plus
+Al IX	octuply ionized Al
+Al IX	octuply ionized aluminum
+Al IX	aluminum IX
+Al IX	[Al IX]
+Al IX	Al8+
+Al IX	Al8plus
+Al X	nonuply ionized Al
+Al X	nonuply ionized aluminum
+Al X	aluminum X
+Al X	[Al X]
+Al X	Al9+
+Al X	Al9plus
+Si I	neutral Si
+Si I	neutral silicon
+Si I	silicon I
+Si I	[Si I]
+Si II	singly ionized Si
+Si II	singly ionized silicon
+Si II	silicon II
+Si II	[Si II]
+Si II	Si+
+Si II	Si1+
+Si III	doubly ionized Si
+Si III	doubly ionized silicon
+Si III	silicon III
+Si III	[Si III]
+Si III	Si2+
+Si III	Si2plus
+Si IV	triply ionized Si
+Si IV	triply ionized silicon
+Si IV	silicon IV
+Si IV	[Si IV]
+Si IV	Si3+
+Si IV	Si3plus
+Si V	quadruply ionized Si
+Si V	quadruply ionized silicon
+Si V	silicon V
+Si V	[Si V]
+Si V	Si4+
+Si V	Si4plus
+Si VI	quintuply ionized Si
+Si VI	quintuply ionized silicon
+Si VI	silicon VI
+Si VI	[Si VI]
+Si VI	Si5+
+Si VI	Si5plus
+Si VII	sextuply ionized Si
+Si VII	sextuply ionized silicon
+Si VII	silicon VII
+Si VII	[Si VII]
+Si VII	Si6+
+Si VII	Si6plus
+Si VIII	septuply ionized Si
+Si VIII	septuply ionized silicon
+Si VIII	silicon VIII
+Si VIII	[Si VIII]
+Si VIII	Si7+
+Si VIII	Si7plus
+Si IX	octuply ionized Si
+Si IX	octuply ionized silicon
+Si IX	silicon IX
+Si IX	[Si IX]
+Si IX	Si8+
+Si IX	Si8plus
+Si X	nonuply ionized Si
+Si X	nonuply ionized silicon
+Si X	silicon X
+Si X	[Si X]
+Si X	Si9+
+Si X	Si9plus
+S I	neutral S
+S I	neutral sulfur
+S I	sulfur I
+S I	[S I]
+S II	singly ionized S
+S II	singly ionized sulfur
+S II	sulfur II
+S II	[S II]
+S II	S+
+S II	S1+
+S III	doubly ionized S
+S III	doubly ionized sulfur
+S III	sulfur III
+S III	[S III]
+S III	S2+
+S III	S2plus
+S IV	triply ionized S
+S IV	triply ionized sulfur
+S IV	sulfur IV
+S IV	[S IV]
+S IV	S3+
+S IV	S3plus
+S V	quadruply ionized S
+S V	quadruply ionized sulfur
+S V	sulfur V
+S V	[S V]
+S V	S4+
+S V	S4plus
+S VI	quintuply ionized S
+S VI	quintuply ionized sulfur
+S VI	sulfur VI
+S VI	[S VI]
+S VI	S5+
+S VI	S5plus
+S VII	sextuply ionized S
+S VII	sextuply ionized sulfur
+S VII	sulfur VII
+S VII	[S VII]
+S VII	S6+
+S VII	S6plus
+S VIII	septuply ionized S
+S VIII	septuply ionized sulfur
+S VIII	sulfur VIII
+S VIII	[S VIII]
+S VIII	S7+
+S VIII	S7plus
+S IX	octuply ionized S
+S IX	octuply ionized sulfur
+S IX	sulfur IX
+S IX	[S IX]
+S IX	S8+
+S IX	S8plus
+S X	nonuply ionized S
+S X	nonuply ionized sulfur
+S X	sulfur X
+S X	[S X]
+S X	S9+
+S X	S9plus
+Ar I	neutral Ar
+Ar I	neutral argon
+Ar I	argon I
+Ar I	[Ar I]
+Ar II	singly ionized Ar
+Ar II	singly ionized argon
+Ar II	argon II
+Ar II	[Ar II]
+Ar II	Ar+
+Ar II	Ar1+
+Ar III	doubly ionized Ar
+Ar III	doubly ionized argon
+Ar III	argon III
+Ar III	[Ar III]
+Ar III	Ar2+
+Ar III	Ar2plus
+Ar IV	triply ionized Ar
+Ar IV	triply ionized argon
+Ar IV	argon IV
+Ar IV	[Ar IV]
+Ar IV	Ar3+
+Ar IV	Ar3plus
+Ar V	quadruply ionized Ar
+Ar V	quadruply ionized argon
+Ar V	argon V
+Ar V	[Ar V]
+Ar V	Ar4+
+Ar V	Ar4plus
+Ar VI	quintuply ionized Ar
+Ar VI	quintuply ionized argon
+Ar VI	argon VI
+Ar VI	[Ar VI]
+Ar VI	Ar5+
+Ar VI	Ar5plus
+Ar VII	sextuply ionized Ar
+Ar VII	sextuply ionized argon
+Ar VII	argon VII
+Ar VII	[Ar VII]
+Ar VII	Ar6+
+Ar VII	Ar6plus
+Ar VIII	septuply ionized Ar
+Ar VIII	septuply ionized argon
+Ar VIII	argon VIII
+Ar VIII	[Ar VIII]
+Ar VIII	Ar7+
+Ar VIII	Ar7plus
+Ar IX	octuply ionized Ar
+Ar IX	octuply ionized argon
+Ar IX	argon IX
+Ar IX	[Ar IX]
+Ar IX	Ar8+
+Ar IX	Ar8plus
+Ar X	nonuply ionized Ar
+Ar X	nonuply ionized argon
+Ar X	argon X
+Ar X	[Ar X]
+Ar X	Ar9+
+Ar X	Ar9plus
+Ca I	neutral Ca
+Ca I	neutral calcium
+Ca I	calcium I
+Ca I	[Ca I]
+Ca II	singly ionized Ca
+Ca II	singly ionized calcium
+Ca II	calcium II
+Ca II	[Ca II]
+Ca II	Ca+
+Ca II	Ca1+
+Ca III	doubly ionized Ca
+Ca III	doubly ionized calcium
+Ca III	calcium III
+Ca III	[Ca III]
+Ca III	Ca2+
+Ca III	Ca2plus
+Ca IV	triply ionized Ca
+Ca IV	triply ionized calcium
+Ca IV	calcium IV
+Ca IV	[Ca IV]
+Ca IV	Ca3+
+Ca IV	Ca3plus
+Ca V	quadruply ionized Ca
+Ca V	quadruply ionized calcium
+Ca V	calcium V
+Ca V	[Ca V]
+Ca V	Ca4+
+Ca V	Ca4plus
+Ca VI	quintuply ionized Ca
+Ca VI	quintuply ionized calcium
+Ca VI	calcium VI
+Ca VI	[Ca VI]
+Ca VI	Ca5+
+Ca VI	Ca5plus
+Ca VII	sextuply ionized Ca
+Ca VII	sextuply ionized calcium
+Ca VII	calcium VII
+Ca VII	[Ca VII]
+Ca VII	Ca6+
+Ca VII	Ca6plus
+Ca VIII	septuply ionized Ca
+Ca VIII	septuply ionized calcium
+Ca VIII	calcium VIII
+Ca VIII	[Ca VIII]
+Ca VIII	Ca7+
+Ca VIII	Ca7plus
+Ca IX	octuply ionized Ca
+Ca IX	octuply ionized calcium
+Ca IX	calcium IX
+Ca IX	[Ca IX]
+Ca IX	Ca8+
+Ca IX	Ca8plus
+Ca X	nonuply ionized Ca
+Ca X	nonuply ionized calcium
+Ca X	calcium X
+Ca X	[Ca X]
+Ca X	Ca9+
+Ca X	Ca9plus
+Fe I	neutral Fe
+Fe I	neutral iron
+Fe I	iron I
+Fe I	[Fe I]
+Fe II	singly ionized Fe
+Fe II	singly ionized iron
+Fe II	iron II
+Fe II	[Fe II]
+Fe II	Fe+
+Fe II	Fe1+
+Fe III	doubly ionized Fe
+Fe III	doubly ionized iron
+Fe III	iron III
+Fe III	[Fe III]
+Fe III	Fe2+
+Fe III	Fe2plus
+Fe IV	triply ionized Fe
+Fe IV	triply ionized iron
+Fe IV	iron IV
+Fe IV	[Fe IV]
+Fe IV	Fe3+
+Fe IV	Fe3plus
+Fe V	quadruply ionized Fe
+Fe V	quadruply ionized iron
+Fe V	iron V
+Fe V	[Fe V]
+Fe V	Fe4+
+Fe V	Fe4plus
+Fe VI	quintuply ionized Fe
+Fe VI	quintuply ionized iron
+Fe VI	iron VI
+Fe VI	[Fe VI]
+Fe VI	Fe5+
+Fe VI	Fe5plus
+Fe VII	sextuply ionized Fe
+Fe VII	sextuply ionized iron
+Fe VII	iron VII
+Fe VII	[Fe VII]
+Fe VII	Fe6+
+Fe VII	Fe6plus
+Fe VIII	septuply ionized Fe
+Fe VIII	septuply ionized iron
+Fe VIII	iron VIII
+Fe VIII	[Fe VIII]
+Fe VIII	Fe7+
+Fe VIII	Fe7plus
+Fe IX	octuply ionized Fe
+Fe IX	octuply ionized iron
+Fe IX	iron IX
+Fe IX	[Fe IX]
+Fe IX	Fe8+
+Fe IX	Fe8plus
+Fe X	nonuply ionized Fe
+Fe X	nonuply ionized iron
+Fe X	iron X
+Fe X	[Fe X]
+Fe X	Fe9+
+Fe X	Fe9plus
+Ni I	neutral Ni
+Ni I	neutral nickel
+Ni I	nickel I
+Ni I	[Ni I]
+Ni II	singly ionized Ni
+Ni II	singly ionized nickel
+Ni II	nickel II
+Ni II	[Ni II]
+Ni II	Ni+
+Ni II	Ni1+
+Ni III	doubly ionized Ni
+Ni III	doubly ionized nickel
+Ni III	nickel III
+Ni III	[Ni III]
+Ni III	Ni2+
+Ni III	Ni2plus
+Ni IV	triply ionized Ni
+Ni IV	triply ionized nickel
+Ni IV	nickel IV
+Ni IV	[Ni IV]
+Ni IV	Ni3+
+Ni IV	Ni3plus
+Ni V	quadruply ionized Ni
+Ni V	quadruply ionized nickel
+Ni V	nickel V
+Ni V	[Ni V]
+Ni V	Ni4+
+Ni V	Ni4plus
+Ni VI	quintuply ionized Ni
+Ni VI	quintuply ionized nickel
+Ni VI	nickel VI
+Ni VI	[Ni VI]
+Ni VI	Ni5+
+Ni VI	Ni5plus
+Ni VII	sextuply ionized Ni
+Ni VII	sextuply ionized nickel
+Ni VII	nickel VII
+Ni VII	[Ni VII]
+Ni VII	Ni6+
+Ni VII	Ni6plus
+Ni VIII	septuply ionized Ni
+Ni VIII	septuply ionized nickel
+Ni VIII	nickel VIII
+Ni VIII	[Ni VIII]
+Ni VIII	Ni7+
+Ni VIII	Ni7plus
+Ni IX	octuply ionized Ni
+Ni IX	octuply ionized nickel
+Ni IX	nickel IX
+Ni IX	[Ni IX]
+Ni IX	Ni8+
+Ni IX	Ni8plus
+Ni X	nonuply ionized Ni
+Ni X	nonuply ionized nickel
+Ni X	nickel X
+Ni X	[Ni X]
+Ni X	Ni9+
+Ni X	Ni9plus
+Zn I	neutral Zn
+Zn I	neutral zinc
+Zn I	zinc I
+Zn I	[Zn I]
+Zn II	singly ionized Zn
+Zn II	singly ionized zinc
+Zn II	zinc II
+Zn II	[Zn II]
+Zn II	Zn+
+Zn II	Zn1+
+Zn III	doubly ionized Zn
+Zn III	doubly ionized zinc
+Zn III	zinc III
+Zn III	[Zn III]
+Zn III	Zn2+
+Zn III	Zn2plus
+Zn IV	triply ionized Zn
+Zn IV	triply ionized zinc
+Zn IV	zinc IV
+Zn IV	[Zn IV]
+Zn IV	Zn3+
+Zn IV	Zn3plus
+Zn V	quadruply ionized Zn
+Zn V	quadruply ionized zinc
+Zn V	zinc V
+Zn V	[Zn V]
+Zn V	Zn4+
+Zn V	Zn4plus
+Zn VI	quintuply ionized Zn
+Zn VI	quintuply ionized zinc
+Zn VI	zinc VI
+Zn VI	[Zn VI]
+Zn VI	Zn5+
+Zn VI	Zn5plus
+Zn VII	sextuply ionized Zn
+Zn VII	sextuply ionized zinc
+Zn VII	zinc VII
+Zn VII	[Zn VII]
+Zn VII	Zn6+
+Zn VII	Zn6plus
+Zn VIII	septuply ionized Zn
+Zn VIII	septuply ionized zinc
+Zn VIII	zinc VIII
+Zn VIII	[Zn VIII]
+Zn VIII	Zn7+
+Zn VIII	Zn7plus
+Zn IX	octuply ionized Zn
+Zn IX	octuply ionized zinc
+Zn IX	zinc IX
+Zn IX	[Zn IX]
+Zn IX	Zn8+
+Zn IX	Zn8plus
+Zn X	nonuply ionized Zn
+Zn X	nonuply ionized zinc
+Zn X	zinc X
+Zn X	[Zn X]
+Zn X	Zn9+
+Zn X	Zn9plus
+Ba I	neutral Ba
+Ba I	neutral barium
+Ba I	barium I
+Ba I	[Ba I]
+Ba II	singly ionized Ba
+Ba II	singly ionized barium
+Ba II	barium II
+Ba II	[Ba II]
+Ba II	Ba+
+Ba II	Ba1+
+Ba III	doubly ionized Ba
+Ba III	doubly ionized barium
+Ba III	barium III
+Ba III	[Ba III]
+Ba III	Ba2+
+Ba III	Ba2plus
+Ba IV	triply ionized Ba
+Ba IV	triply ionized barium
+Ba IV	barium IV
+Ba IV	[Ba IV]
+Ba IV	Ba3+
+Ba IV	Ba3plus
+Ba V	quadruply ionized Ba
+Ba V	quadruply ionized barium
+Ba V	barium V
+Ba V	[Ba V]
+Ba V	Ba4+
+Ba V	Ba4plus
+Ba VI	quintuply ionized Ba
+Ba VI	quintuply ionized barium
+Ba VI	barium VI
+Ba VI	[Ba VI]
+Ba VI	Ba5+
+Ba VI	Ba5plus
+Ba VII	sextuply ionized Ba
+Ba VII	sextuply ionized barium
+Ba VII	barium VII
+Ba VII	[Ba VII]
+Ba VII	Ba6+
+Ba VII	Ba6plus
+Ba VIII	septuply ionized Ba
+Ba VIII	septuply ionized barium
+Ba VIII	barium VIII
+Ba VIII	[Ba VIII]
+Ba VIII	Ba7+
+Ba VIII	Ba7plus
+Ba IX	octuply ionized Ba
+Ba IX	octuply ionized barium
+Ba IX	barium IX
+Ba IX	[Ba IX]
+Ba IX	Ba8+
+Ba IX	Ba8plus
+Ba X	nonuply ionized Ba
+Ba X	nonuply ionized barium
+Ba X	barium X
+Ba X	[Ba X]
+Ba X	Ba9+
+Ba X	Ba9plus
