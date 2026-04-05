@@ -1,0 +1,130 @@
+# BibMan synonym pairs — astronomy jargon and abbreviations
+# Source: hardwired in bibman_server.py, extracted for GitHub
+# Extend this file with additional pairs; re-run "Import standard astronomy synonyms"
+# Format: two tab-separated columns, one pair per line.
+# term_a	term_b
+# Lines starting with # are comments and are ignored.
+#
+active galactic nucleus	AGN
+active galactic nuclei	AGN
+star formation rate	SFR
+star formation rates	SFR
+initial mass function	IMF
+stellar initial mass function	IMF
+luminosity function	LF
+stellar mass function	SMF
+spectral energy distribution	SED
+spectral energy distributions	SED
+interstellar medium	ISM
+intracluster medium	ICM
+circumgalactic medium	CGM
+intergalactic medium	IGM
+interstellar radiation field	ISRF
+cosmic ray	CR
+cosmic rays	CR
+line of sight	LOS
+signal to noise ratio	SNR
+signal to noise	S/N
+signal to noise ratio	S/N
+full width at half maximum	FWHM
+elliptical galaxy	ETG
+elliptical galaxies	ETGs
+early type galaxy	ETG
+early type galaxies	ETGs
+late type galaxy	LTG
+late type galaxies	LTGs
+spiral galaxy	LTG
+brightest cluster galaxy	BCG
+brightest cluster galaxies	BCGs
+low surface brightness	LSB
+low surface brightness galaxy	LSBG
+ultra diffuse galaxy	UDG
+ultra diffuse galaxies	UDGs
+submillimeter galaxy	SMG
+luminous infrared galaxy	LIRG
+luminous infrared galaxies	LIRGs
+ultraluminous infrared galaxy	ULIRG
+ultraluminous infrared galaxies	ULIRGs
+dwarf elliptical	dE
+dwarf spheroidal	dSph
+dwarf irregular	dIrr
+blue compact dwarf	BCD
+ram pressure stripping	RPS
+ram pressure stripped	RPS
+tidal stripping	TS
+virial radius	r_vir
+virial mass	M_vir
+stellar mass	M_star
+stellar mass	M*
+velocity dispersion	sigma
+horizontal branch	HB
+red giant branch	RGB
+asymptotic giant branch	AGB
+main sequence	MS
+white dwarf	WD
+white dwarfs	WDs
+neutron star	NS
+black hole	BH
+supermassive black hole	SMBH
+supermassive black holes	SMBHs
+intermediate mass black hole	IMBH
+globular cluster	GC
+globular clusters	GCs
+planetary nebula	PN
+planetary nebulae	PNe
+supernova remnant	SNR
+supernova remnants	SNRs
+supernova	SN
+supernovae	SNe
+type ia supernova	SNIa
+core collapse supernova	CCSN
+HI	neutral hydrogen
+HII	ionized hydrogen
+H2	molecular hydrogen
+photodissociation region	PDR
+photodissociation regions	PDRs
+photon dominated region	PDR
+Sloan Digital Sky Survey	SDSS
+Two Micron All Sky Survey	2MASS
+Hubble Space Telescope	HST
+James Webb Space Telescope	JWST
+Very Large Telescope	VLT
+Atacama Large Millimeter Array	ALMA
+Very Large Array	VLA
+Spitzer Space Telescope	Spitzer
+Chandra X-ray Observatory	Chandra
+XMM-Newton	XMM
+Herschel Space Observatory	Herschel
+Galaxy Evolution Explorer	GALEX
+Wide Field Camera 3	WFC3
+Advanced Camera for Surveys	ACS
+Multi Unit Spectroscopic Explorer	MUSE
+Mapping Nearby Galaxies at APO	MaNGA
+Dark Energy Survey	DES
+Hyper Suprime-Cam	HSC
+Legacy Survey of Space and Time	LSST
+Square Kilometre Array	SKA
+MeerKAT radio telescope	MeerKAT
+Australian Square Kilometre Array Pathfinder	ASKAP
+Low Frequency Array	LOFAR
+Green Bank Telescope	GBT
+Westerbork Synthesis Radio Telescope	WSRT
+cold dark matter	CDM
+lambda CDM	LCDM
+dark matter halo	DMH
+cosmic microwave background	CMB
+baryon acoustic oscillation	BAO
+baryon acoustic oscillations	BAO
+large scale structure	LSS
+epoch of reionization	EoR
+surface brightness	SB
+color magnitude diagram	CMD
+Hertzsprung Russell diagram	HR diagram
+Hertzsprung Russell diagram	HRD
+mass to light ratio	M/L
+effective radius	Re
+effective radius	r_e
+half light radius	r_h
+equivalent width	EW
+rotation curve	RC
+position angle	PA
