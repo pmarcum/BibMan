@@ -1,0 +1,48 @@
+# BibMan synonym pairs — spectral lines
+# Source: hardwired in bibman_server.py, extracted for GitHub
+# Add lines in the format: canonical_name<TAB>alias
+# e.g. "H alpha<TAB>6563" or "Lyman alpha<TAB>1216"
+# Format: two tab-separated columns, one pair per line.
+# term_a	term_b
+# Lines starting with # are comments and are ignored.
+#
+H alpha	Halpha
+H alpha	Ha
+H alpha	6563
+H beta	Hbeta
+H beta	Hb
+H beta	4861
+H gamma	Hgamma
+H gamma	4340
+H delta	Hdelta
+H delta	4102
+Lyman alpha	Lya
+Lyman alpha	Ly-alpha
+Lyman alpha	1216
+Lyman beta	Lyb
+Lyman beta	1026
+[OII]	OII doublet
+[OII]	3727
+[OII]	oxygen ii
+[OIII]	OIII
+[OIII]	5007
+[OIII]	oxygen iii
+[NII]	NII
+[NII]	6583
+[NII]	nitrogen ii
+[SII]	SII
+[SII]	6717
+[NeIII]	NeIII
+[NeIII]	3869
+CIV	carbon iv
+CIV	1549
+MgII	magnesium ii
+MgII	2798
+CaII K	calcium ii K
+CaII K	3933
+CaII H	calcium ii H
+CaII H	3968
+NaD	sodium D
+NaD	5893
+21cm	HI 21cm
+21cm	1420 MHz
