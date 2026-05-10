@@ -27,7 +27,7 @@
   var vw=window.innerWidth,vh=window.innerHeight;
   var bw=Math.min(430,vw*0.94);
   box.style.left=Math.max(0,Math.round((vw-bw)/2))+'px';
-  box.style.top=Math.max(0,Math.round((vh-400)/2))+'px';
+  box.style.top=Math.max(0,Math.round((vh-320)/2))+'px';
   var isDragging=false,dragStartX=0,dragStartY=0,boxStartX=0,boxStartY=0;
   box.addEventListener('mousedown',function(e){
     if(e.target.tagName==='INPUT'||e.target.tagName==='BUTTON'||e.target.tagName==='SELECT')return;
@@ -58,9 +58,9 @@
       return;
     }
     function fld(label,id,val){
-      return '<div style="margin-bottom:8px">'
-        +'<div style="font-size:9px;color:#888;margin-bottom:3px;text-transform:uppercase;letter-spacing:.1em">'+label+'</div>'
-        +'<input id="'+id+'" style="width:100%;background:#0f0f11;border:1px solid #353540;border-radius:4px;padding:5px 8px;color:#e8e8f0;font-size:12px;box-sizing:border-box" value="'+(String(val||'').replace(/"/g,'&quot;'))+'">'
+      return '<div style="display:flex;align-items:center;margin-bottom:4px;gap:6px">'
+        +'<div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right">'+label+'</div>'
+        +'<input id="'+id+'" style="flex:1;background:#0f0f11;border:1px solid #353540;border-radius:3px;padding:3px 6px;color:#e8e8f0;font-size:11px;box-sizing:border-box" value="'+(String(val||'').replace(/"/g,'&quot;'))+'">'
         +'</div>';
     }
     var src=meta.source||'unknown';
@@ -74,9 +74,9 @@
       +fld('Pages','__bm_p__',meta.pages||'')
       +fld('DOI','__bm_d__',meta.doi||'')
       +fld('arXiv ID','__bm_x__',meta.arxiv_id||'')
-      +'<div style="margin-bottom:8px">'
-      +'<div style="font-size:9px;color:#888;margin-bottom:3px;text-transform:uppercase;letter-spacing:.1em">Library</div>'
-      +'<select id="__bm_lib__" style="width:100%;background:#0f0f11;border:1px solid #353540;border-radius:4px;padding:5px 8px;color:#e8e8f0;font-size:12px;box-sizing:border-box">'
+      +'<div style="display:flex;align-items:center;margin-bottom:4px;gap:6px">'
+      +'<div style="font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right">Library</div>'
+      +'<select id="__bm_lib__" style="flex:1;background:#0f0f11;border:1px solid #353540;border-radius:3px;padding:3px 6px;color:#e8e8f0;font-size:11px;box-sizing:border-box">'
       +'<option value="">Loading...</option>'
       +'</select>'
       +'</div>'
