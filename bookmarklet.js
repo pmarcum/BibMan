@@ -19,7 +19,7 @@
   ov.id='__bm_ov__';
   ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.65);z-index:2147483647;font-family:monospace';
   var box=document.createElement('div');
-  box.style.cssText='background:#17171a;border:1px solid #353540;border-radius:8px;padding:20px;width:430px;max-width:94vw;color:#e8e8f0;font-size:13px;max-height:90vh;overflow-y:auto;cursor:move;user-select:none;position:absolute';
+  box.style.cssText='background:#17171a;border:1px solid #353540;border-radius:8px;padding:20px;width:430px;max-width:98vw;color:#e8e8f0;font-size:13px;max-height:90vh;overflow-y:auto;cursor:move;user-select:none;position:absolute';
   box.innerHTML='<div style="color:#7eb8f7;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px">\uD83D\uDCDA Add to BibMan</div>'
     +'<div id="__bm_body__"><div style="color:#888;text-align:center;padding:18px 0">\u23F3 Extracting metadata...</div></div>';
   ov.appendChild(box);
@@ -41,6 +41,21 @@
     box.style.top=(boxStartY+(e.clientY-dragStartY))+'px';
   });
   document.addEventListener('mouseup',function(){isDragging=false;});
+  // Resize handle
+  var rsz=document.createElement('div');
+  rsz.style.cssText='position:absolute;bottom:0;right:0;width:14px;height:14px;cursor:se-resize;opacity:0.4;background:linear-gradient(135deg,transparent 50%,#888 50%)';
+  box.appendChild(rsz);
+  var isResizing=false,resStartX=0,resStartW=0;
+  rsz.addEventListener('mousedown',function(e){
+    isResizing=true;resStartX=e.clientX;resStartW=box.offsetWidth;
+    e.preventDefault();e.stopPropagation();
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!isResizing)return;
+    var newW=Math.max(280,Math.min(700,resStartW+(e.clientX-resStartX)));
+    box.style.width=newW+'px';
+  });
+  document.addEventListener('mouseup',function(){isResizing=false;});
   ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
   fetch(u,{
     method:'POST',
