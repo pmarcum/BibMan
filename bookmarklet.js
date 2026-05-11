@@ -117,9 +117,9 @@
     body.appendChild(fld('DOI','__bm_d__',meta.doi||''));
     body.appendChild(fld('arXiv ID','__bm_x__',meta.arxiv_id||''));
     var libRow=document.createElement('div');
-    libRow.style.cssText='display:flex;align-items:center;margin-bottom:4px;gap:6px';
+    libRow.style.cssText='display:flex;align-items:center;margin-bottom:8px;margin-top:6px;gap:6px;background:rgba(126,184,247,0.08);border:1px solid rgba(126,184,247,0.3);border-radius:4px;padding:4px 6px';
     var libLbl=document.createElement('div');
-    libLbl.style.cssText='font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right';
+    libLbl.style.cssText='font-size:9px;color:#7eb8f7;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right;font-weight:600';
     libLbl.textContent='Library';
     var libSel=document.createElement('select');
     libSel.id='__bm_lib__';
