@@ -69,28 +69,9 @@
   fetch(u,{
     method:'POST',
     headers:{'Content-Type':'text/plain'},
-    redirect:'manual',
     body:JSON.stringify({credential:c,action:'extract_and_preview',url:url,identifier:identifier,title:document.title})
   })
-  .then(function(r){
-    if(r.type==='opaqueredirect'||r.status===0){
-      var body=document.getElementById('__bm_body__');
-      if(body){
-        body.innerHTML='';
-        var msg=document.createElement('div');
-        msg.style.cssText='color:#f7c97e;margin-bottom:8px';
-        msg.textContent='Please open BibMan in your browser first to authorize, then try the bookmarklet again.';
-        var btn=document.createElement('button');
-        btn.textContent='Open BibMan';
-        btn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;margin-top:8px';
-        btn.onclick=function(){window.open(u,'_blank');ov.remove();};
-        body.appendChild(msg);
-        body.appendChild(btn);
-      }
-      return Promise.reject('auth_needed');
-    }
-    return r.json();
-  })
+  .then(function(r){return r.json();})
   .then(function(meta){
     var body=document.getElementById('__bm_body__');
     if(!body)return;
@@ -238,7 +219,6 @@
     };
   })
   .catch(function(e){
-    if(e==='auth_needed')return;
     var body=document.getElementById('__bm_body__');
     if(!body)return;
     var msg=e.message||'unknown error';
