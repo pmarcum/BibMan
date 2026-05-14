@@ -1,6 +1,7 @@
 (function(){
   var u='__GAS_URL__';
   var c='__CREDENTIAL__';
+  var dashboard='__DASHBOARD_URL__';
   var url=window.location.href;
   var identifier=null;
   var m=url.match(/arxiv\.org\/(?:pdf|abs)\/([\w.]+)/);
@@ -132,7 +133,7 @@
     body.appendChild(libRow);
     var dashLink=document.createElement('div');
     dashLink.style.cssText='font-size:10px;color:#555;margin-bottom:6px;margin-top:2px';
-    dashLink.innerHTML='Other functions: <a href="'+u+'" target="_blank" style="color:#7eb8f7">BibMan Dashboard</a>';
+    dashLink.innerHTML='Other functions: <a href="'+dashboard+'" target="_blank" style="color:#7eb8f7">BibMan Dashboard</a>';
     body.appendChild(dashLink);
     var srcDiv=document.createElement('div');
     srcDiv.style.cssText='font-size:10px;margin-bottom:10px';
@@ -148,7 +149,8 @@
     var savBtn=document.createElement('button');
     savBtn.id='__bm_sav__';
     savBtn.textContent='Add to BibMan';
-    savBtn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600';
+    savBtn.disabled=true;
+    savBtn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;opacity:0.5';
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
     body.appendChild(btnRow);
@@ -166,12 +168,16 @@
       var newOpt=document.createElement('option');
       newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
       libSel.appendChild(newOpt);
+      savBtn.disabled=false;
+      savBtn.style.opacity='1';
     })
     .catch(function(){
       libSel.innerHTML='';
       var o=document.createElement('option');
       o.value='';o.textContent='Default library';
       libSel.appendChild(o);
+      savBtn.disabled=false;
+      savBtn.style.opacity='1';
     });
     savBtn.onclick=function(){
       savBtn.textContent='Saving...';savBtn.disabled=true;
@@ -215,7 +221,16 @@
           setTimeout(function(){ov.remove();},2000);
         }
       })
-      .catch(function(e){alert('BibMan save error: '+e.message);ov.remove();});
+      .catch(function(e){
+        var body2=document.getElementById('__bm_body__');
+        if(!body2)return;
+        body2.innerHTML='';
+        var ok=document.createElement('div');
+        ok.style.cssText='color:#f7c97e;text-align:center;padding:16px;font-size:11px';
+        ok.textContent='Request sent — check BibMan dashboard to confirm paper was added.';
+        body2.appendChild(ok);
+        setTimeout(function(){ov.remove();},3000);
+      });
     };
   })
   .catch(function(e){
