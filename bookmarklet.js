@@ -151,27 +151,39 @@
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
     body.appendChild(btnRow);   
-    // Libraries bundled in metadata response — populate immediately
-    var libs=meta.libraries||[];
-    var currentLib=meta.current_library||'';
-    libSel.innerHTML='';
-    if(libs.length){
-      libs.forEach(function(l){
+    // Fetch libraries in parallel while user reviews metadata
+    fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({credential:c,action:'get_libraries'})})
+    .then(function(r){return r.json();})
+    .then(function(ld){
+      if(!ld.libraries||!ld.libraries.length){
+        libSel.innerHTML='';
         var o=document.createElement('option');
-        o.value=l.name;o.textContent=l.name;
-        if(l.name===currentLib)o.selected=true;
+        o.value='';o.textContent='Default library';
         libSel.appendChild(o);
-      });
-    }else{
+      }else{
+        libSel.innerHTML='';
+        ld.libraries.forEach(function(l){
+          var o=document.createElement('option');
+          o.value=l.name;o.textContent=l.name;
+          if(l.name===ld.current)o.selected=true;
+          libSel.appendChild(o);
+        });
+      }
+      var newOpt=document.createElement('option');
+      newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
+      libSel.appendChild(newOpt);
+      savBtn.disabled=false;
+      savBtn.style.opacity='1';
+    })
+    .catch(function(){
+      libSel.innerHTML='';
       var o=document.createElement('option');
       o.value='';o.textContent='Default library';
       libSel.appendChild(o);
-    }
-    var newOpt=document.createElement('option');
-    newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
-    libSel.appendChild(newOpt);
-    savBtn.disabled=false;
-    savBtn.style.opacity='1';    
+      savBtn.disabled=false;
+      savBtn.style.opacity='1';
+    });
     savBtn.onclick=function(){
       savBtn.textContent='Saving...';savBtn.disabled=true;
       var lv=libSel.value==='__db__'?'':libSel.value;
