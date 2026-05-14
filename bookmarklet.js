@@ -125,9 +125,6 @@
     var libSel=document.createElement('select');
     libSel.id='__bm_lib__';
     libSel.style.cssText='flex:1;background:#0f0f11;border:1px solid #353540;border-radius:3px;padding:3px 6px;color:#e8e8f0;font-size:11px;box-sizing:border-box';
-    var loadOpt=document.createElement('option');
-    loadOpt.value='';loadOpt.textContent='Loading...';
-    libSel.appendChild(loadOpt);
     libRow.appendChild(libLbl);
     libRow.appendChild(libSel);
     body.appendChild(libRow);
@@ -153,32 +150,28 @@
     savBtn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;opacity:0.5';
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
-    body.appendChild(btnRow);
-    fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({credential:c,action:'get_libraries'})})
-    .then(function(r){return r.json();})
-    .then(function(ld){
-      if(!ld.libraries)return;
-      libSel.innerHTML='';
-      ld.libraries.forEach(function(l){
+    body.appendChild(btnRow);   
+    // Libraries bundled in metadata response — populate immediately
+    var libs=meta.libraries||[];
+    var currentLib=meta.current_library||'';
+    libSel.innerHTML='';
+    if(libs.length){
+      libs.forEach(function(l){
         var o=document.createElement('option');
         o.value=l.name;o.textContent=l.name;
-        if(l.name===ld.current)o.selected=true;
+        if(l.name===currentLib)o.selected=true;
         libSel.appendChild(o);
       });
-      var newOpt=document.createElement('option');
-      newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
-      libSel.appendChild(newOpt);
-      savBtn.disabled=false;
-      savBtn.style.opacity='1';
-    })
-    .catch(function(){
-      libSel.innerHTML='';
+    }else{
       var o=document.createElement('option');
       o.value='';o.textContent='Default library';
       libSel.appendChild(o);
-      savBtn.disabled=false;
-      savBtn.style.opacity='1';
-    });
+    }
+    var newOpt=document.createElement('option');
+    newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
+    libSel.appendChild(newOpt);
+    savBtn.disabled=false;
+    savBtn.style.opacity='1';    
     savBtn.onclick=function(){
       savBtn.textContent='Saving...';savBtn.disabled=true;
       var lv=libSel.value==='__db__'?'':libSel.value;
@@ -195,7 +188,8 @@
           pages:document.getElementById('__bm_p__').value,
           doi:document.getElementById('__bm_d__').value,
           arxiv_id:document.getElementById('__bm_x__').value,
-          library:lv
+          library:lv,
+          _username:localStorage.getItem('bibman_u_'+c.substring(0,8))||''
         })
       })
       .then(function(r){return r.json();})
