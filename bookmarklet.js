@@ -67,6 +67,37 @@
   });
   document.addEventListener('mouseup',function(){isDragging=false;isResizing=false;});
   ov.addEventListener('click',function(e){if(e.target===ov)ov.remove();});
+
+  // ── Update notice helper ───────────────────────────────────────────────────
+  // Called with any response object. If ping_update_available is set and the
+  // notice hasn't been shown yet this session, inserts a dismissible strip
+  // at the top of the box just below the header.
+  var _updateNoticeShown=false;
+  function _maybeShowUpdateNotice(resp){
+    if(_updateNoticeShown)return;
+    if(!resp||!resp.ping_update_available)return;
+    _updateNoticeShown=true;
+    var strip=document.createElement('div');
+    strip.style.cssText='background:rgba(247,201,126,0.12);border:1px solid rgba(247,201,126,0.4);'
+      +'border-radius:4px;padding:6px 10px;margin-bottom:12px;font-size:10px;'
+      +'color:#f7c97e;display:flex;align-items:flex-start;gap:8px;line-height:1.5';
+    var txt=document.createElement('div');
+    txt.style.cssText='flex:1';
+    var notes=resp.ping_notes?(' — '+resp.ping_notes):'';
+    txt.innerHTML='<strong>BibMan bookmarklet update available</strong>'+notes
+      +'<br><span style="opacity:0.7">Ask your admin to redeploy the bookmarklet getter webapp, '
+      +'then reinstall your bookmarklet from the BibMan dashboard.</span>';
+    var dismiss=document.createElement('button');
+    dismiss.textContent='✕';
+    dismiss.style.cssText='background:transparent;border:none;color:#f7c97e;cursor:pointer;'
+      +'font-size:12px;padding:0;flex-shrink:0;opacity:0.7;line-height:1';
+    dismiss.onclick=function(){strip.remove();};
+    strip.appendChild(txt);
+    strip.appendChild(dismiss);
+    // Insert after header (hdr), before body (bdy)
+    box.insertBefore(strip,bdy);
+  }
+
   fetch(u,{
     method:'POST',
     headers:{'Content-Type':'text/plain'},
@@ -74,6 +105,7 @@
   })
   .then(function(r){return r.json();})
   .then(function(meta){
+    _maybeShowUpdateNotice(meta);
     var body=document.getElementById('__bm_body__');
     if(!body)return;
     if(meta.error){
@@ -152,12 +184,13 @@
     savBtn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;opacity:0.5';
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
-    body.appendChild(btnRow);   
+    body.appendChild(btnRow);
     // Fetch libraries in parallel while user reviews metadata
     fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify({credential:c,action:'get_libraries'})})
     .then(function(r){return r.json();})
     .then(function(ld){
+      _maybeShowUpdateNotice(ld);
       if(!ld.libraries||!ld.libraries.length){
         libSel.innerHTML='';
         var o=document.createElement('option');
@@ -210,6 +243,7 @@
       })
       .then(function(r){return r.json();})
       .then(function(result){
+        _maybeShowUpdateNotice(result);
         var body2=document.getElementById('__bm_body__');
         if(result.error){
           body2.innerHTML='';
