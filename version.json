@@ -1,6 +1,6 @@
 {
   "bibman_core_library_version": 1,
-  "bibman_frontend_thinclient_webapp_version": 2,
+  "bibman_frontend_thinclient_webapp_version": 1,
   "bibman_bookmarklet_capture_webapp_version": 1,
   "bibman_core_library_notes": "Initial library release",
   "bibman_frontend_thinclient_webapp_notes": "Initial release",
