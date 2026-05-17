@@ -1,6 +1,6 @@
 {
-  "bibman_core_library_version": 7,
-  "bibman_frontend_thinclient_webapp_version": 12,
+  "bibman_core_library_version": 6,
+  "bibman_frontend_thinclient_webapp_version": 13,
   "bibman_bookmarklet_capture_webapp_version": 7,
   "bibman_core_library_notes": "Initial library release",
   "bibman_frontend_thinclient_webapp_notes": "Initial release",
