@@ -138,6 +138,12 @@
       return row;
     }
     var src=meta.source||'unknown';
+    
+    var dbgDiv=document.createElement('div');
+    dbgDiv.style.cssText='font-size:9px;color:#888;margin-bottom:4px';
+    dbgDiv.textContent='libs: '+JSON.stringify(meta.libraries||'MISSING');  
+    box.appendChild(dbgDiv);
+    
     var srcColor=src==='ads'?'#7ef7c2':src.startsWith('ads')?'#f7c97e':'#888';
     body.innerHTML='';
     body.appendChild(fld('Title','__bm_t__',meta.title||''));
