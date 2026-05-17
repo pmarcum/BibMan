@@ -97,7 +97,6 @@
     // Insert after header (hdr), before body (bdy)
     box.insertBefore(strip,bdy);
   }
-
   fetch(u,{
     method:'POST',
     headers:{'Content-Type':'text/plain'},
@@ -190,41 +189,28 @@
     savBtn.style.cssText='padding:5px 14px;background:#7eb8f7;border:none;color:#000;border-radius:4px;cursor:pointer;font-weight:600;opacity:0.5';
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
-    body.appendChild(btnRow);
-    // Fetch libraries in parallel while user reviews metadata
-    fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({credential:c,action:'get_libraries'})})
-    .then(function(r){return r.json();})
-    .then(function(ld){
-      _maybeShowUpdateNotice(ld);
-      if(!ld.libraries||!ld.libraries.length){
-        libSel.innerHTML='';
+    body.appendChild(btnRow);   
+    // Libraries bundled in extract_and_preview response — populate immediately
+    var libs=meta.libraries||[];
+    var currentLib=meta.current_library||'';
+    libSel.innerHTML='';
+    if(libs.length){
+      libs.forEach(function(l){
         var o=document.createElement('option');
-        o.value='';o.textContent='Default library';
+        o.value=l.name;o.textContent=l.name;
+        if(l.name===currentLib)o.selected=true;
         libSel.appendChild(o);
-      }else{
-        libSel.innerHTML='';
-        ld.libraries.forEach(function(l){
-          var o=document.createElement('option');
-          o.value=l.name;o.textContent=l.name;
-          if(l.name===ld.current)o.selected=true;
-          libSel.appendChild(o);
-        });
-      }
-      var newOpt=document.createElement('option');
-      newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
-      libSel.appendChild(newOpt);
-      savBtn.disabled=false;
-      savBtn.style.opacity='1';
-    })
-    .catch(function(){
-      libSel.innerHTML='';
+      });
+    }else{
       var o=document.createElement('option');
       o.value='';o.textContent='Default library';
       libSel.appendChild(o);
-      savBtn.disabled=false;
-      savBtn.style.opacity='1';
-    });
+    }
+    var newOpt=document.createElement('option');
+    newOpt.value='__db__';newOpt.textContent='+ New (use Dashboard)';
+    libSel.appendChild(newOpt);
+    savBtn.disabled=false;
+    savBtn.style.opacity='1';
     savBtn.onclick=function(){
       savBtn.textContent='Saving...';savBtn.disabled=true;
       var lv=libSel.value==='__db__'?'':libSel.value;
