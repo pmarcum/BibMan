@@ -1197,6 +1197,7 @@ const CIRCLE_COLORS = ['#7eb8f7','#f7c97e','#7ef7c2','#c17ef7'];
 // ── Init ──────────────────────────────────────────────────────────────────────
 window.addEventListener('load', async () => {
   _clientConfig = await gas('getClientConfig');
+  console.log('clientConfig:', JSON.stringify(_clientConfig));
   // ── Version update banners ────────────────────────────────────────────
   if (_clientConfig.coreLibraryUpdateAvailable) {
     const b = document.createElement('div');
