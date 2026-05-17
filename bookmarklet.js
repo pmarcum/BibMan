@@ -75,7 +75,7 @@
   var _updateNoticeShown=false;
   function _maybeShowUpdateNotice(resp){
     if(_updateNoticeShown)return;
-    if(!resp||!resp.ping_update_available)return;
+    if(!resp||!resp.bibman_bookmarklet_capture_update_available)return;
     _updateNoticeShown=true;
     var strip=document.createElement('div');
     strip.style.cssText='background:rgba(247,201,126,0.12);border:1px solid rgba(247,201,126,0.4);'
@@ -83,7 +83,7 @@
       +'color:#f7c97e;display:flex;align-items:flex-start;gap:8px;line-height:1.5';
     var txt=document.createElement('div');
     txt.style.cssText='flex:1';
-    var notes=resp.ping_notes?(' — '+resp.ping_notes):'';
+    var notes=resp.bibman_bookmarklet_capture_webapp_notes?(' — '+resp.bibman_bookmarklet_capture_webapp_notes):'';
     txt.innerHTML='<strong>BibMan bookmarklet update available</strong>'+notes
       +'<br><span style="opacity:0.7">Ask your admin to redeploy the bookmarklet getter webapp, '
       +'then reinstall your bookmarklet from the BibMan dashboard.</span>';
