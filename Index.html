@@ -1235,7 +1235,7 @@ function gas(fn, ...args) {
     google.script.run
       .withSuccessHandler(res)
       .withFailureHandler(e => rej(new Error(e.message||String(e))))
-      [fn](...args);
+      .gas(fn, ...args);
   });
 }
 // ── Libraries ─────────────────────────────────────────────────────────────────
