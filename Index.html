@@ -1206,8 +1206,9 @@ window.addEventListener('load', async () => {
       + 'display:flex;align-items:center;gap:10px;flex-shrink:0';
     b.innerHTML = '<strong>⬆ BibMan Core library update available</strong>'
       + ' (v' + _clientConfig.coreLibraryVersion + ' → v' + _clientConfig.latestCoreLibrary + ')'
-      + (_clientConfig.coreLibraryNotes ? ' — ' + _clientConfig.coreLibraryNotes : '')
-      + '<span style="opacity:.7;margin-left:4px">Go to Extensions → Libraries → update BibManCore version</span>'
+      + '<span style="opacity:.7;margin-left:4px">'
+      + (_clientConfig.coreLibraryNotes || 'Go to Extensions → Libraries → update BibManCore version')
+      + '</span>'
       + '<button onclick="this.parentElement.remove()" style="margin-left:auto;background:transparent;'
       + 'border:none;color:var(--accent2);cursor:pointer;font-size:13px;opacity:.7">✕</button>';
     document.querySelector('.topbar').after(b);
@@ -1219,8 +1220,9 @@ window.addEventListener('load', async () => {
       + 'display:flex;align-items:center;gap:10px;flex-shrink:0';
     b.innerHTML = '<strong>⬆ BibMan thin client update available</strong>'
       + ' (v' + _clientConfig.frontendThinClientVersion + ' → v' + _clientConfig.latestFrontendThinClient + ')'
-      + (_clientConfig.frontendThinClientNotes ? ' — ' + _clientConfig.frontendThinClientNotes : '')
-      + '<span style="opacity:.7;margin-left:4px">Replace Code.gs with the new version from GitHub and redeploy</span>'
+      + '<span style="opacity:.7;margin-left:4px">'
+      + (_clientConfig.frontendThinClientNotes || 'Replace Code.gs with the new version from GitHub and redeploy')
+      + '</span>''
       + '<button onclick="this.parentElement.remove()" style="margin-left:auto;background:transparent;'
       + 'border:none;color:var(--accent);cursor:pointer;font-size:13px;opacity:.7">✕</button>';
     document.querySelector('.topbar').after(b);
