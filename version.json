@@ -1,6 +1,6 @@
 {
   "bibman_core_library_version": 6,
-  "bibman_frontend_thinclient_webapp_version": 12,
+  "bibman_frontend_thinclient_webapp_version": 13,
   "bibman_bookmarklet_capture_webapp_version": 8,
   "bibman_core_library_notes": "Go to Extensions → Libraries → update BibManCore version",
   "bibman_frontend_thinclient_webapp_notes": "Replace Code.gs with the new version from GitHub and redeploy",
