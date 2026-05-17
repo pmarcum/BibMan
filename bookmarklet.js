@@ -150,6 +150,7 @@
     body.appendChild(fld('DOI','__bm_d__',meta.doi||''));
     body.appendChild(fld('arXiv ID','__bm_x__',meta.arxiv_id||''));
     ov.dataset.bibcode=meta.bibcode||'';
+    ov.dataset.bibkey=meta.bibkey||'';
     ov.dataset.identifiers=JSON.stringify(meta.identifiers||[]);
     var libRow=document.createElement('div');
     libRow.style.cssText='display:flex;align-items:center;margin-bottom:8px;margin-top:6px;gap:6px;background:rgba(126,184,247,0.08);border:1px solid rgba(126,184,247,0.3);border-radius:4px;padding:4px 6px';
@@ -236,6 +237,7 @@
           doi:document.getElementById('__bm_d__').value,
           arxiv_id:document.getElementById('__bm_x__').value,
           bibcode:ov.dataset.bibcode||'',
+          bibkey:ov.dataset.bibkey||'',
           identifiers:JSON.parse(ov.dataset.identifiers||'[]'),
           library:lv,
           _username:localStorage.getItem('bibman_u_'+c.substring(0,8))||''
