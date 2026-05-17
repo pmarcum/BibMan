@@ -160,6 +160,11 @@
     var libSel=document.createElement('select');
     libSel.id='__bm_lib__';
     libSel.style.cssText='flex:1;background:#0f0f11;border:1px solid #353540;border-radius:3px;padding:3px 6px;color:#e8e8f0;font-size:11px;box-sizing:border-box';
+    // Add loading placeholder
+    var loadingOpt=document.createElement('option');
+    loadingOpt.value='';
+    loadingOpt.textContent='Loading libraries...';
+    libSel.appendChild(loadingOpt);
     libRow.appendChild(libLbl);
     libRow.appendChild(libSel);
     body.appendChild(libRow);
