@@ -1209,7 +1209,7 @@ window.addEventListener('load', async () => {
     const _storageKey = 'bibman_u_' + (_clientConfig.credential||'').substring(0,8);
     localStorage.setItem(_storageKey, _currentUser);
   }
-  google.script.run.withSuccessHandler(u => _cfWorker = u||'').withFailureHandler(()=>{}).getCfWorkerUrl();
+  gas('getCfWorkerUrl').then(u => _cfWorker = u||'').catch(()=>{});
   // Get current user and auto-register as team member (server deduplicates)
   if (_currentUser) { gas('addTeamMember', _currentUser).catch(() => {}); }
   // Mark bookmarklet as authorized for this browser
