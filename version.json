@@ -1,5 +1,5 @@
 {
-  "bibman_core_library_version": 11,
+  "bibman_core_library_version": 12,
   "bibman_frontend_thinclient_webapp_version": 13,
   "bibman_bookmarklet_capture_webapp_version": 8,
   "bibman_core_library_notes": "Go to Extensions → Libraries → update BibManCore version",
