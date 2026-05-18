@@ -4,7 +4,7 @@
   var dashboard='__DASHBOARD_URL__';
   var url=window.location.href;
   var identifier=null;
-  var m=url.match(/arxiv\.org\/(?:pdf|abs)\/([\w.]+)/);
+  var m=url.match(/arxiv\.org\/(?:pdf|abs|html)\/([\w.]+)/);
   if(m)identifier=m[1];
   if(!identifier){m=url.match(/link_gateway\/([^\/]+)\//);if(m)identifier=decodeURIComponent(m[1]);}
   if(!identifier){m=url.match(/\/abs\/([^\/\?#]+)/);if(m)identifier=decodeURIComponent(m[1]);}
