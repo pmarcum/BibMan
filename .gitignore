@@ -1,0 +1,18 @@
+# BibMan data — never commit (the real library, embeddings and ANN index live only on the server)
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.usearch
+*.index
+# Secrets
+.env
+*.env
+*service_account*.json
+*credentials*.json
+cloud/**/secrets*
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
