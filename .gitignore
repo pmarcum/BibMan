@@ -16,3 +16,9 @@ __pycache__/
 *.pyc
 venv/
 .venv/
+# Server runtime files that live next to the DB (library-specific, never in the repo)
+bibman_config.json
+backfill_list.txt
+*.usearch.timestamp
+*.log
+vec0.so
