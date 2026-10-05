@@ -1,0 +1,26 @@
+# /etc/systemd/system/bibman.service — BibMan Flask backend (gunicorn on localhost only; nginx fronts it)
+# Fill in the two REPLACE_ME values, then:  sudo systemctl daemon-reload && sudo systemctl enable --now bibman
+#   SESSION_SECRET:  openssl rand -hex 24
+#   GAS_CREDENTIAL:  openssl rand -hex 16   (the same value goes in every Apps Script project's GAS_CREDENTIAL property)
+# ADS and Gemini keys are NOT set here: Apps Script sends them with each request (bring-your-own-key).
+[Unit]
+Description=BibMan
+After=network.target
+
+[Service]
+User=bibman
+WorkingDirectory=/home/bibman/bibman
+ExecStart=/home/bibman/bibman/venv/bin/gunicorn \
+    bibman_e2micro_server:app \
+    --bind 127.0.0.1:8081 \
+    --workers 1 \
+    --timeout 600
+Restart=always
+
+Environment=DB_PATH=/home/bibman/bibman.db
+Environment=LIBRARY_NAME=MyLibrary
+Environment=SESSION_SECRET=REPLACE_ME
+Environment=GAS_CREDENTIAL=REPLACE_ME
+
+[Install]
+WantedBy=multi-user.target
