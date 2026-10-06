@@ -181,6 +181,14 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
 
 ## Security notes
 
+- **Keep secret files private on the VM.** Any file holding a key or credential should be readable only by its owner:
+  - Google service-account files (`*.json`), if you ever place one on the VM: owned by `bibman`, mode 600.
+  - The service file `/etc/systemd/system/bibman.service`, which holds `GAS_CREDENTIAL` and `SESSION_SECRET`: `sudo chmod 600 /etc/systemd/system/bibman.service`.
+  - The read-only key file, `bibman.service.d/export-credential.conf`, if used: mode 600.
+
+  Check them with `ls -l`: the line should start `-rw-------`. Both BibMan and gooTeX run as `bibman`, so this never locks either one out.
+- **Remove leftovers.** Don't leave copies of keys, old backups of the service file, or one-off scripts lying around in home folders or `/tmp` once you're done with them.
+
 - **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, along with the Gemini key, so only put people you trust on the access list. If someone leaves, generate a new value, change it in `bibman.service` and all three projects, restart, and have everyone re-drag the bookmarklet.
 - **`/get_bib` has no credential check**, and nothing needs to reach it from outside the VM (gooTeX does not use it). The supplied nginx config blocks it at the public address; keep that block if you edit the config. Don't delete the Python function `get_bib()` itself: the authenticated `/api/export/bib-text` route uses it.
 - **Never commit** `bibman.db`, the `.usearch` index, `bibman_config.json`, or a filled-in `bibman.service`. The repo's `.gitignore` covers the common names.
