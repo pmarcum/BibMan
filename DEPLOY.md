@@ -163,9 +163,16 @@ Open the dashboard URL, go to **Utilities → Bookmarklet**, drag **Add to BibMa
 
 ## Part 3: the PDF proxy Worker
 
-The dashboard displays arXiv PDFs through a small Cloudflare Worker that fetches the PDF and adds the CORS headers a browser needs. Create a free Worker at [dash.cloudflare.com](https://dash.cloudflare.com) and put its URL in `CF_WORKER_URL`. The dashboard calls it as `CF_WORKER_URL?url=<encoded PDF URL>`.
+The dashboard displays arXiv PDFs through a small Cloudflare Worker: arXiv doesn't send the headers a browser needs to read a PDF from another site, so the Worker fetches the file and adds them. Only arXiv papers use it; other PDFs go through your server.
 
-<!-- TODO: add the Worker source as cloudflare_worker/worker.js -->
+1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com) (or use one you have). Note which account you use; you'll need it if you ever change the Worker.
+2. **Workers & Pages → Create → Worker**, give it a name (e.g. `bibman-get-pdf`), and deploy the starter code.
+3. Click **Edit code**, replace everything with [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js), and click **Deploy**.
+4. Put the Worker's address (`https://bibman-get-pdf.<your-subdomain>.workers.dev`) into the frontend's `CF_WORKER_URL` property.
+
+To check it: opening the Worker's address in a browser with nothing after it should show `url param required`.
+
+The Worker only fetches `arxiv.org` addresses, so strangers can't use it as a free proxy on your account.
 
 ---
 

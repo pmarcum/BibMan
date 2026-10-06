@@ -93,6 +93,10 @@ To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the 
 - **`SESSION_SECRET`**: change it in `bibman.service` and restart.
 - **ADS token / Gemini key**: change the Script Properties in the Frontend and Capture projects. Nothing on the server stores them.
 
+## The PDF proxy Worker
+
+arXiv PDFs reach the dashboard through a Cloudflare Worker (`CF_WORKER_URL` in the frontend's Script Properties). It lives in whichever Cloudflare account created it, which may not be the one that runs your tunnel; the `….<subdomain>.workers.dev` part of its address identifies the account. Its source is [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js). To change it: Workers & Pages → the Worker → **Edit code** → paste → **Deploy**.
+
 ## TLS certificate
 
 Certbot renews automatically. Check with `sudo certbot renew --dry-run`.
