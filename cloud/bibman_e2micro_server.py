@@ -142,10 +142,24 @@ USEARCH_INDEX = None
 USEARCH_TIMESTAMP = None
 USEARCH_PATH = DB_PATH.parent / 'bibman_768_i8.usearch'
 USEARCH_TIMESTAMP_PATH = DB_PATH.parent / 'bibman_768.usearch.timestamp'
+USEARCH_METHOD_PATH = DB_PATH.parent / 'bibman_768_i8.usearch.method'  # written by bibman_rebuild_usearch.py
+USEARCH_METHOD = 'A'   # no file = the original April 2026 index (x127, queries sent as floats)
+
+def search_id_for(passage_id: str) -> int:
+    """Search-index key for a passage: first 16 hex digits of its UUID, as a 63-bit integer.
+    Must match bibman_backfill_search_ids.py and the IDs already in the database."""
+    return int(passage_id.replace('-', '')[:16], 16) & 0x7FFFFFFFFFFFFFFF
+
+def quantize_query(v):
+    """Compress a 768-dim query exactly like the index's vectors (see bibman_rebuild_usearch.py)."""
+    if USEARCH_METHOD == 'C':
+        m = float(np.abs(v).max()) or 1.0
+        return np.clip(np.round(v / m * 127), -127, 127).astype(np.int8)
+    return v  # methods A/B: the float query works as well as or better than a compressed one
 
 def _load_usearch_index():
     """Load USearch index once at module import time."""
-    global USEARCH_INDEX, USEARCH_TIMESTAMP
+    global USEARCH_INDEX, USEARCH_TIMESTAMP, USEARCH_METHOD
     try:
         from usearch.index import Index
         if USEARCH_PATH.exists():
@@ -154,6 +168,9 @@ def _load_usearch_index():
             # Reduce expansion_search for faster queries on e2-micro (trade accuracy for speed)
             USEARCH_INDEX.expansion_search = 8
             log.info(f'USearch index loaded: {USEARCH_INDEX.size} vectors, {USEARCH_INDEX.ndim} dims, expansion={USEARCH_INDEX.expansion_search}')
+            if USEARCH_METHOD_PATH.exists():
+                USEARCH_METHOD = (USEARCH_METHOD_PATH.read_text().strip() or 'A')[:1]
+            log.info(f'USearch index compression method: {USEARCH_METHOD}')
             if USEARCH_TIMESTAMP_PATH.exists():
                 USEARCH_TIMESTAMP = USEARCH_TIMESTAMP_PATH.read_text().strip()
                 log.info(f'USearch index timestamp: {USEARCH_TIMESTAMP}')
@@ -851,11 +868,13 @@ def write_passages_to_db(paper_id: str, passages: list,
             except Exception:
                 pass
             conn.execute('DELETE FROM passages WHERE paper_id = ?', (paper_id,))
+        for p in passages:  # key used by the semantic-search index (see search_id_for)
+            p['search_id'] = search_id_for(p['id'])
         conn.executemany('''
             INSERT OR IGNORE INTO passages
-                (id, paper_id, page_number, passage_index, text, x1, y1, x2, y2)
+                (id, paper_id, page_number, passage_index, text, x1, y1, x2, y2, search_id)
             VALUES
-                (:id,:paper_id,:page_number,:passage_index,:text,:x1,:y1,:x2,:y2)
+                (:id,:paper_id,:page_number,:passage_index,:text,:x1,:y1,:x2,:y2,:search_id)
         ''', passages)
         if source_url and source_url.startswith('https://arxiv.org/pdf/'):
             conn.execute(
@@ -2715,7 +2734,7 @@ def venn_search():
                 q_vec_truncated = np.array(full_vec[:768], dtype=np.float32)
                 # Query USearch for bulk of library
                 try:
-                    matches = USEARCH_INDEX.search(q_vec_truncated, 50)  # Reduced to 50 for speed on e2-micro
+                    matches = USEARCH_INDEX.search(quantize_query(q_vec_truncated), 50)  # Reduced to 50 for speed on e2-micro
                     # Apply score threshold — filter weak semantic matches
                     search_ids = []
                     for key, distance in zip(matches.keys, matches.distances):

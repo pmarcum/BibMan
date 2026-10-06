@@ -34,19 +34,39 @@ To check the trigger: open the Frontend project → **Triggers** (clock icon) �
 
 ## The semantic-search index
 
-- Gemini returns 3072-dimensional embeddings; they are stored at full size in the database.
-- For speed and to fit in 1 GB of RAM, search uses a separate **usearch** index holding the first 768 dimensions of each embedding (Gemini embeddings are designed to be truncated this way), quantized to int8. On a large library it is a few hundred MB. Never build it as float16 or at more dimensions on an e2-micro: it will not fit in memory.
-- Index keys are each passage's `search_id`, a 63-bit number derived from the first 16 hex digits of the passage's UUID: `int(uuid.replace('-', '')[:16], 16) & 0x7FFFFFFFFFFFFFFF`. Search results are mapped back to passages through that column.
-- **The index is a snapshot.** It does not update itself as papers are added; new papers are still found by word and synonym search, but they only appear in meaning-based results after the index is rebuilt.
+**How it works**
+- **Embeddings:** Gemini returns 3072-dimensional embeddings, and they are stored at full size in the database.
+- **The index:** for speed and to fit in 1 GB of RAM, meaning-based search uses a separate **usearch** index. It holds the first 768 dimensions of each embedding (Gemini embeddings are designed to be truncated this way), compressed to int8. On a large library it is a few hundred MB. Never build it as float16 or at more dimensions on an e2-micro: it will not fit in memory.
+- **Keys:** index keys are each passage's `search_id`, a 63-bit number taken from the first 16 hex digits of the passage's UUID: `int(uuid.replace('-', '')[:16], 16) & 0x7FFFFFFFFFFFFFFF`. Search results are mapped back to passages through that column. The server sets it for every new passage (since 6 Oct 2026). Before that, passages added after the April 2026 migration got none.
+- **Compression method:** `bibman_768_i8.usearch.method`, written by the rebuild script, records how vectors were compressed. The server reads it at startup and compresses search queries the same way. With no file, it assumes the original April 2026 method (A).
 
-Rebuild it with `bibman_rebuild_usearch.py` (it reads embeddings already in the database, so it makes no Gemini calls), then restart the service to load the new index. Before relying on it, check the two known issues below.
+**The index is a snapshot.** It does not update itself as papers are added. New papers are found by word and synonym search straight away, but meaning-based search only finds them after a rebuild. Rebuild after adding a batch of papers, or monthly.
 
-### Known issues with the index rebuild
+**Scripts** (in `cloud/`, installed in `/home/bibman/bibman/`; all run as `bibman` with BibMan's Python):
 
-1. **New passages don't get a `search_id`.** The add-paper code inserts passages without filling `passages.search_id`, and the rebuild only indexes passages that have one. Fill the missing ones before rebuilding, e.g. in Python against the database: `UPDATE passages SET search_id = ? WHERE id = ?` for every row where `search_id IS NULL`, using the formula above.
-2. **The rebuild writes the index next to the script, not next to the database.** `bibman_rebuild_usearch.py` saves to `/home/bibman/bibman/bibman_768_i8.usearch`, but the server loads `/home/bibman/bibman_768_i8.usearch`. Move the new file (and its `.timestamp`) up one folder before restarting. The script also expects the sqlite-vec library as `vec0.so` beside it: copy it from the venv (`venv/bin/python -c "import sqlite_vec; print(sqlite_vec.loadable_path())"` prints its location).
+| Script | What it does | Changes anything? |
+|---|---|---|
+| `bibman_search_check.py` | Counts passages missing a search ID, verifies the ID formula against existing IDs, identifies how the live index was built, measures search accuracy on a sample, and reports disk and memory. | No (read-only) |
+| `bibman_backfill_search_ids.py` | Fills in missing search IDs. Dry run by default; `--apply` writes. It refuses to write unless the formula reproduces every existing ID and no new ID collides. | Only with `--apply`, and only rows that have no ID |
+| `bibman_rebuild_usearch.py` | Rebuilds the index from stored embeddings (no Gemini calls). It writes to a temporary file, checks it, keeps the current index as `bibman_768_i8.usearch.prev`, then installs the new one. It does not restart BibMan. | The index files only; the database is opened read-only |
 
-Run rebuilds when nobody is using BibMan **or gooTeX**: on a 1 GB machine the rebuild holds the whole new index in memory and competes with both services, and the script restarts BibMan when it finishes. Never run the old `reindex_i8.py`: it overwrites the index file the running server has open.
+**Rebuilding.** Do this when nobody is using BibMan **or gooTeX**: on a 1 GB machine the build needs about 420 MB for a 390,000-passage library.
+```
+cd /home/bibman/bibman
+sudo -u bibman venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
+sudo -u bibman venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
+sudo -u bibman nice -n 19 venv/bin/python bibman_rebuild_usearch.py     # 10-40 minutes
+sudo systemctl restart bibman
+sudo journalctl -u bibman -n 8 --no-pager                               # "USearch index loaded: N vectors" and the method
+```
+**To go back to the previous index:**
+```
+cd /home/bibman && sudo -u bibman mv bibman_768_i8.usearch.prev bibman_768_i8.usearch
+sudo systemctl restart bibman
+```
+If the previous index was the original April 2026 one, also delete `bibman_768_i8.usearch.method`, so the server uses method A again.
+
+Never run the old one-off `reindex_i8.py`: it overwrites the index file that the running server has open.
 
 ## Updating the server code
 
@@ -74,6 +94,8 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 | Core library | `BIBMAN_CORE_LIBRARY_VERSION` (in the Core project) | `bibman_core_library_version` |
 | Frontend web app | `FRONTEND_THINCLIENT_VERSION` | `bibman_frontend_thinclient_webapp_version` |
 | Capture web app | `BOOKMARKLET_CAPTURE_VERSION` | `bibman_bookmarklet_capture_webapp_version` |
+
+Current versions (October 2026): Core library **3** (adds the per-call access check), used by the dashboard web app. The bookmarklet-capture web app is still pinned to Core 1, which is fine: it doesn't use the changed code. When you publish, set `bibman_core_library_version` in `version.json` **and** the Core project's `BIBMAN_CORE_LIBRARY_VERSION` Script Property to `3` together. Otherwise your own dashboard shows an "update available" banner.
 
 To release a change to one of them: update its files in `apps_script/`, deploy a new version in the Apps Script editor (for the Core library, also move each web app's library version up under **Libraries**), bump its Script Property, then bump the matching number and `…_notes` text in `version.json`.
 
