@@ -244,13 +244,13 @@ function getClientConfig(config) {
 function _requireAllowedUser_(config) {
   const email = (Session.getActiveUser().getEmail() || '').trim().toLowerCase();
   if (!email) throw new Error('BibMan: you are not signed in to a Google account.');
-  const cache = CacheService.getUserCache();
-  const key   = 'bm_allowed_' + (config.accessSheetId || 'none');
-  if (cache && cache.get(key) === email) return;
+  const key = 'bm_allowed_' + (config.accessSheetId || 'none');
+  let cache = null;
+  try { cache = CacheService.getUserCache(); if (cache && cache.get(key) === email) return; } catch (e) { cache = null; }
   if (!getAllowedUsers(config).some(u => u.email === email)) {
-    throw new Error('BibMan: access denied for ' + email + '.');
+    throw new Error('BibMan: access denied for ' + email + ' (or the access list could not be read; reload to retry).');
   }
-  if (cache) cache.put(key, email, 300);
+  try { if (cache) cache.put(key, email, 300); } catch (e) {}
 }
 
 function dispatch(config, fn, ...args) {
