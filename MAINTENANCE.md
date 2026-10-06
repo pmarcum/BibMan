@@ -121,7 +121,7 @@ To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the 
 
 Every file holding a key should be readable only by its owner: `ls -l` should show `-rw-------`. On the reference VM this means `/home/bibman/*credentials*.json` and `bibman.service.d/export-credential.conf`. Fix any that aren't with `sudo chmod 600 <file>`; the services run as `bibman` and keep access. To check for strays:
 ```
-sudo find /home/bibman /etc/systemd/system -maxdepth 2 \( -name '*credential*' -o -name '*.json' -o -name 'bibman.service*' \) -perm /o+r -ls
+sudo find /home/bibman /etc/systemd/system -maxdepth 2 \( -name '*credential*' -o -name '*.json' -o -name 'bibman.service*' \) -type f -perm /o+r -ls
 ```
 This lists any such file that other accounts can still read. An empty result is what you want.
 
