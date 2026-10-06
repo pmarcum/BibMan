@@ -163,16 +163,15 @@ Open the dashboard URL, go to **Utilities → Bookmarklet**, drag **Add to BibMa
 
 ## Part 3: the PDF proxy Worker
 
-The dashboard displays arXiv PDFs through a small Cloudflare Worker: arXiv doesn't send the headers a browser needs to read a PDF from another site, so the Worker fetches the file and adds them. Only arXiv papers use it; other PDFs go through your server.
+The dashboard displays arXiv PDFs through a small Cloudflare Worker: arXiv doesn't send the headers a browser needs to read a PDF from another site, so the Worker fetches the file and adds them. (PDFs from other sites are fetched by your server instead.) The Worker accepts any website, but only answers requests carrying your secret key and only passes on real PDF files.
 
 1. Create a free account at [dash.cloudflare.com](https://dash.cloudflare.com) (or use one you have). Note which account you use; you'll need it if you ever change the Worker.
 2. **Workers & Pages → Create → Worker**, give it a name (e.g. `bibman-get-pdf`), and deploy the starter code.
 3. Click **Edit code**, replace everything with [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js), and click **Deploy**.
-4. Put the Worker's address (`https://bibman-get-pdf.<your-subdomain>.workers.dev`) into the frontend's `CF_WORKER_URL` property.
+4. Make a key: any long random string (`openssl rand -hex 16` on the server prints one). In the Worker's **Settings → Variables and Secrets**, add a variable of type **Secret** named `PROXY_KEY` with that value.
+5. In the frontend's Script Properties, set `CF_WORKER_URL` to the Worker's address **followed by `/` and the key**: `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>`.
 
-To check it: opening the Worker's address in a browser with nothing after it should show `url param required`.
-
-The Worker only fetches `arxiv.org` addresses, so strangers can't use it as a free proxy on your account.
+To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url=https://arxiv.org/pdf/1706.03762` in a browser: you should see the PDF. Without the key you get `forbidden`.
 
 ---
 

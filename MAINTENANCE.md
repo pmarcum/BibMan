@@ -95,7 +95,7 @@ To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the 
 
 ## The PDF proxy Worker
 
-arXiv PDFs reach the dashboard through a Cloudflare Worker (`CF_WORKER_URL` in the frontend's Script Properties). It lives in whichever Cloudflare account created it, which may not be the one that runs your tunnel; the `….<subdomain>.workers.dev` part of its address identifies the account. Its source is [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js). To change it: Workers & Pages → the Worker → **Edit code** → paste → **Deploy**.
+arXiv PDFs reach the dashboard through a Cloudflare Worker (`CF_WORKER_URL` in the frontend's Script Properties). It lives in whichever Cloudflare account created it, which may not be the one that runs your tunnel; the `….<subdomain>.workers.dev` part of its address identifies the account. Its source is [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js). It only answers requests whose path starts with its `PROXY_KEY` secret, which is also the last part of `CF_WORKER_URL`; to change the key, update both. To change it: Workers & Pages → the Worker → **Edit code** → paste → **Deploy**.
 
 ## TLS certificate
 
