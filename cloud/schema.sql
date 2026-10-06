@@ -257,7 +257,7 @@ CREATE TRIGGER passages_ad AFTER DELETE ON passages BEGIN
   VALUES('delete', old.rowid, old.text);
 END;
 
-CREATE TRIGGER passages_au AFTER UPDATE ON passages BEGIN
+CREATE TRIGGER passages_au AFTER UPDATE OF text ON passages BEGIN
   INSERT INTO passages_fts(passages_fts, rowid, text)
   VALUES('delete', old.rowid, old.text);
   INSERT INTO passages_fts(rowid, text) VALUES (new.rowid, new.text);

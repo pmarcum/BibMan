@@ -169,7 +169,14 @@ def _load_usearch_index():
             USEARCH_INDEX.expansion_search = 8
             log.info(f'USearch index loaded: {USEARCH_INDEX.size} vectors, {USEARCH_INDEX.ndim} dims, expansion={USEARCH_INDEX.expansion_search}')
             if USEARCH_METHOD_PATH.exists():
-                USEARCH_METHOD = (USEARCH_METHOD_PATH.read_text().strip() or 'A')[:1]
+                try:
+                    m = USEARCH_METHOD_PATH.read_text().strip().upper()[:1]
+                except Exception:
+                    m = ''
+                if m in ('A', 'B', 'C'):
+                    USEARCH_METHOD = m
+                else:
+                    log.warning(f'{USEARCH_METHOD_PATH.name} is unreadable or not A/B/C; assuming method A')
             log.info(f'USearch index compression method: {USEARCH_METHOD}')
             if USEARCH_TIMESTAMP_PATH.exists():
                 USEARCH_TIMESTAMP = USEARCH_TIMESTAMP_PATH.read_text().strip()
@@ -334,9 +341,9 @@ def get_request_tokens():
 def get_request_models() -> tuple:
     """Extract model names from request headers, falling back to module constants."""
     if not has_request_context():  # background threads (nightly job, ingest) have no request
-        return EMBED_MODEL, 'models/gemini-2.0-flash'
+        return EMBED_MODEL, DEFAULT_GENERATE_MODEL
     embed_model    = request.headers.get('X-Embed-Model',    '').strip() or EMBED_MODEL
-    generate_model = request.headers.get('X-Generate-Model', '').strip() or 'models/gemini-2.0-flash'
+    generate_model = request.headers.get('X-Generate-Model', '').strip() or DEFAULT_GENERATE_MODEL
     return embed_model, generate_model
 
 
@@ -679,7 +686,9 @@ def chunk_text(pages, paper_id: str) -> list:
     return passages
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
-EMBED_MODEL    = 'models/gemini-embedding-001'
+EMBED_MODEL    = 'models/gemini-embedding-001'   # never change without re-embedding the whole library
+# Used only when the caller sends no X-Generate-Model (Apps Script sends its GENERATE_MODEL Script Property).
+DEFAULT_GENERATE_MODEL = os.environ.get('GENERATE_MODEL', 'models/gemini-3.5-flash-lite')
 EMBED_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
 def _gemini_headers(gemini_key: str) -> dict:
