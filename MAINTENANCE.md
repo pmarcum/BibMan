@@ -87,6 +87,20 @@ The database is the only thing that cannot be recreated, and it is large (severa
 
 To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the backup at `DB_PATH`, rebuild the index, and start the service.
 
+## Adding and removing people
+
+**To add someone:** add a row to the `allowed_users` tab of the access-list Sheet (column A their Google email, column B their name, column D `TRUE` if they should be an admin), then send them the dashboard link. They install the bookmarklet themselves from **Utilities → Bookmarklet**.
+
+**To remove someone from the dashboard:** delete their row. They lose the dashboard within about 5 minutes; that's how long a successful access check is remembered.
+
+**To cut someone off completely:** removing the row is not enough if they have a bookmarklet installed. The bookmarklet carries the shared `GAS_CREDENTIAL`, so it keeps adding papers to the library until that credential changes. To revoke all access, including old bookmarklets and any copied credential:
+
+1. Delete their row from `allowed_users`.
+2. Replace `GAS_CREDENTIAL` as described under *Rotating secrets* below.
+3. Ask everyone who should keep access to re-drag the bookmarklet from **Utilities → Bookmarklet**, since their old one stops working.
+
+If gooTeX shares the server and still uses `GAS_CREDENTIAL` rather than its own `EXPORT_CREDENTIAL`, update gooTeX in the same sitting, or its bibliographies stop updating.
+
 ## Rotating secrets
 
 - **`GAS_CREDENTIAL`** (full access; used by the three Apps Script projects and built into the bookmarklet): generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value. If gooTeX still uses `GAS_CREDENTIAL` rather than its own `EXPORT_CREDENTIAL`, change its `BIBMAN_CREDENTIAL` at the same time, or better, move it to `EXPORT_CREDENTIAL` first (DEPLOY.md, *Using BibMan with gooTeX*).
