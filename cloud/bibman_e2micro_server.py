@@ -163,6 +163,8 @@ def _load_usearch_index():
         log.warning(f'USearch not available: {e}')
 
 _load_usearch_index()
+if EXPORT_CREDENTIAL and len(EXPORT_CREDENTIAL) < 16:
+    log.warning('EXPORT_CREDENTIAL is set but shorter than 16 characters; it will NOT be accepted.')
 
 # ── CONFIG dict (runtime settings, persisted as JSON next to DB) ──────────────
 CONFIG_PATH = DB_PATH.parent / 'bibman_config.json'
@@ -257,11 +259,11 @@ def check_gas_credential(credential: str) -> bool:
     The GAS proxy injects GAS_CREDENTIAL into every request header.
     This prevents direct access to the ngrok URL bypassing GAS.
     """
-    return bool(credential) and hmac.compare_digest(credential.encode(), GAS_CREDENTIAL.encode())
+    return isinstance(credential, str) and bool(credential) and hmac.compare_digest(credential.encode(), GAS_CREDENTIAL.encode())
 
 def check_export_credential(credential: str) -> bool:
     """True for the read-only EXPORT_CREDENTIAL (only if one is configured and at least 16 characters)."""
-    return (len(EXPORT_CREDENTIAL) >= 16 and bool(credential)
+    return (len(EXPORT_CREDENTIAL) >= 16 and isinstance(credential, str) and bool(credential)
             and hmac.compare_digest(credential.encode(), EXPORT_CREDENTIAL.encode()))
 
 def gas_auth_required(f):
@@ -1037,8 +1039,9 @@ def embed_annotation_background(ann_id: str, text: str, paper_id: str,
             vec = embed_query(text, gemini_key)  # embed_query works for short texts too
             if vec:
                 try:
+                    conn.execute('DELETE FROM vec_annotations WHERE annotation_id=?', (ann_id,))
                     conn.execute(
-                        'INSERT OR REPLACE INTO vec_annotations (annotation_id, embedding) VALUES (?,?)',
+                        'INSERT INTO vec_annotations (annotation_id, embedding) VALUES (?,?)',
                         (ann_id, vec)
                     )
                     conn.commit()
@@ -2598,6 +2601,12 @@ def venn_search():
         """Quote one term for an FTS5 MATCH so characters like + / * - are taken literally."""
         return '"' + t.replace('"', '""') + '"'
 
+    def _fts_useful(t):
+        """A synonym is worth searching only if FTS would see a phrase or a token of 3+ characters.
+        (Full-text search drops punctuation, so 'C+' becomes 'c' and would match every lone 'c'.)"""
+        toks = re.findall(r'[a-z0-9]+', t.lower())
+        return len(toks) > 1 or (len(toks) == 1 and len(toks[0]) >= 3)
+
     def expand_terms(q):
         """Return (include_terms_set, exclude_term, fts_query_string, skip_semantic).
 
@@ -2632,7 +2641,7 @@ def venn_search():
             fts = _fts_quote(phrase_key)
             if use_synonyms and phrase_synonyms:
                 valid_syns = sorted(
-                    {t for t in phrase_synonyms if len(t) >= 2},
+                    {t for t in phrase_synonyms if len(t) >= 2 and _fts_useful(t)},
                     key=len
                 )[:8]
                 if valid_syns:
@@ -2652,7 +2661,7 @@ def venn_search():
             if not valid:
                 valid = expanded
             original_words = set(words)
-            synonym_words = valid - original_words
+            synonym_words = {t for t in valid - original_words if _fts_useful(t)}
             synonym_list = sorted(synonym_words, key=len)[:max(0, 12 - len(original_words))]
             valid_list = sorted(original_words) + synonym_list
             fts = ' OR '.join(_fts_quote(t) for t in valid_list)
@@ -3752,8 +3761,9 @@ def embed_annotation_endpoint(ann_id):
         vec = embed_query(text, gemini_key)
         if vec:
             try:
+                conn.execute('DELETE FROM vec_annotations WHERE annotation_id=?', (ann_id,))
                 conn.execute(
-                    'INSERT OR REPLACE INTO vec_annotations (annotation_id, embedding) VALUES (?,?)',
+                    'INSERT INTO vec_annotations (annotation_id, embedding) VALUES (?,?)',
                     (ann_id, vec)
                 )
                 conn.commit()
