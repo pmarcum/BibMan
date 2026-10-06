@@ -157,6 +157,9 @@ When you change code later, use **Deploy → Manage deployments → Edit → New
 
 ### 2e. Try it
 
+*Meaning-based search starts working once you have papers: after the nightly job has embedded your first batch, build the search index once (MAINTENANCE.md, "The semantic-search index"). Word and synonym search work from the first paper.*
+
+
 Open the dashboard URL, go to **Utilities → Bookmarklet**, drag **Add to BibMan** to your bookmarks bar, and use it on an ADS or arXiv page. Then send the dashboard link to the people on your access list.
 
 ---
