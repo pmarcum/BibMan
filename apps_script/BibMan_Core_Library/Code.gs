@@ -233,7 +233,28 @@ function getClientConfig(config) {
  * All functions in the dispatch table receive (config, ...args).
  * Adding a new API function only requires adding it here — thin client never changes.
  */
+/**
+ * _requireAllowedUser_: every dashboard call must come from someone on the access list.
+ * doGet already checks the list when the page loads, but the functions behind the page are
+ * callable directly by anyone who can open the web app, so dispatch() checks again.
+ * A successful check is remembered for 5 minutes per user (removing someone from the
+ * sheet therefore takes up to 5 minutes to take effect). Keyed by access-sheet ID so
+ * groups that share this library never share a cached answer.
+ */
+function _requireAllowedUser_(config) {
+  const email = (Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+  if (!email) throw new Error('BibMan: you are not signed in to a Google account.');
+  const cache = CacheService.getUserCache();
+  const key   = 'bm_allowed_' + (config.accessSheetId || 'none');
+  if (cache && cache.get(key) === email) return;
+  if (!getAllowedUsers(config).some(u => u.email === email)) {
+    throw new Error('BibMan: access denied for ' + email + '.');
+  }
+  if (cache) cache.put(key, email, 300);
+}
+
 function dispatch(config, fn, ...args) {
+  _requireAllowedUser_(config);
   const table = {
     // Config / user
     getClientConfig:       () => getClientConfig(config),

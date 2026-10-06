@@ -91,7 +91,7 @@ def get_conn(load_vec=False):
 # ── Embedding generation ──────────────────────────────────────────────────────
 def embed_batch(texts: list, gemini_key: str) -> list:
     """Embed a batch of texts. Returns list of (idx, vector_bytes)."""
-    url = f'{EMBED_BASE_URL}/{EMBED_MODEL}:batchEmbedContents?key={gemini_key}'
+    url = f'{EMBED_BASE_URL}/{EMBED_MODEL}:batchEmbedContents'
     payload = {'requests': [
         {'model': EMBED_MODEL,
          'content': {'parts': [{'text': t}]},
@@ -99,7 +99,7 @@ def embed_batch(texts: list, gemini_key: str) -> list:
         for t in texts
     ]}
     try:
-        r = requests.post(url, json=payload, timeout=60)
+        r = requests.post(url, headers={'x-goog-api-key': gemini_key}, json=payload, timeout=60)
         r.raise_for_status()
         embeddings = r.json()['embeddings']
         results = []

@@ -183,9 +183,14 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
 
 ## Using BibMan with gooTeX
 
-[gooTeX](https://github.com/pmarcum/gooTeX) uses three BibMan routes, all authenticated with the header `X-BibMan-Credential`, whose value must equal BibMan's `GAS_CREDENTIAL` (gooTeX calls it `BIBMAN_CREDENTIAL`, set both in its systemd drop-in and in its template `Config.js`):
+[gooTeX](https://github.com/pmarcum/gooTeX) only *reads* bibliographies from BibMan, through three routes:
 
-- Its compile server, on the same VM: `POST http://localhost:8081/api/export/bib` with body `{"bibkeys": [...], "library": "<name>"}`; BibMan returns `{"bibtex", "found", "missing", "total_requested"}`.
-- Its Apps Script, through nginx: `GET https://<host>/bibman/api/libraries/<name>/stats` (reads `last_rowid`) and `GET https://<host>/bibman/api/export/bib-text?library=<name>` (the Refs sidebar).
+- its compile server, on the same VM: `POST http://localhost:8081/api/export/bib` with body `{"bibkeys": [...], "library": "<name>"}`, returning `{"bibtex", "found", "missing", "total_requested"}`;
+- its Apps Script, through nginx: `GET https://<host>/bibman/api/libraries/<name>/stats` (reads `last_rowid`) and `GET https://<host>/bibman/api/export/bib-text?library=<name>` (the Refs sidebar).
 
-So, if gooTeX shares the server: keep BibMan on `127.0.0.1:8081`, keep the `/bibman/` nginx route, don't change those three routes' request or response shapes, and change `BIBMAN_CREDENTIAL` in gooTeX whenever you change `GAS_CREDENTIAL`. Keep the `/gootex/` block in the nginx config only if gooTeX runs on the same machine.
+Give gooTeX its own **read-only** key rather than `GAS_CREDENTIAL`:
+
+1. Generate one (`openssl rand -hex 16`) and add `Environment=EXPORT_CREDENTIAL=<value>` to `bibman.service`, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. BibMan accepts this key on the three routes above and refuses it everywhere else.
+2. Put the same value in gooTeX's `BIBMAN_CREDENTIAL` (its systemd drop-in and its template `Config.js`). gooTeX's name means "the credential for reaching BibMan"; its value is BibMan's `EXPORT_CREDENTIAL`.
+
+That way gooTeX, and anyone who can open a gooTeX document's script, holds a key that can read bibliographies but not change or delete anything. If gooTeX shares the server, keep BibMan on `127.0.0.1:8081`, keep the `/bibman/` nginx route, and don't change those three routes' request or response shapes. Keep the `/gootex/` block in the nginx config only if gooTeX runs on the same machine.

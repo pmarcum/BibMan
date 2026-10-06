@@ -18,6 +18,10 @@ Environment variables (set in /etc/systemd/system/bibman.service):
    They are passed per-request via X-ADS-Token and X-Gemini-Key headers.)
   SESSION_SECRET   — random hex string for session signing
   GAS_CREDENTIAL   — shared secret for GAS proxy auth (generate: openssl rand -hex 16)
+                     Required: the server refuses to start without one (16+ characters).
+  EXPORT_CREDENTIAL — optional read-only key accepted ONLY on the bibliography-export routes
+                     (/api/export/bib, /api/export/bib-text, /api/libraries/<name>/stats); give
+                     this to gooTeX instead of GAS_CREDENTIAL (generate: openssl rand -hex 16)
 
 Setup:
   pip install flask flask-cors requests pypdf pdfminer.six pymupdf sqlite-vec
@@ -35,6 +39,7 @@ import logging
 import threading
 import time
 import base64
+import hmac
 from datetime import datetime, timezone
 from pathlib import Path
 from functools import wraps
@@ -42,7 +47,7 @@ from collections import Counter
 
 import numpy as np
 import requests
-from flask import Flask, jsonify, request, Response, session
+from flask import Flask, jsonify, request, Response, session, has_request_context
 from flask_cors import CORS
 
 # ── Astronomy text normalisation ──────────────────────────────────────────────
@@ -61,6 +66,12 @@ LIBRARY_NAME   = os.environ.get('LIBRARY_NAME', 'Extragalactic')
 # ADS_TOKEN and GEMINI_KEY are NOT stored on VM — extracted per-request from headers
 SESSION_SECRET = os.environ.get('SESSION_SECRET', os.urandom(24).hex())
 GAS_CREDENTIAL = os.environ.get('GAS_CREDENTIAL', '')  # shared secret for GAS proxy
+# Optional read-only key for the bibliography-export routes only (what gooTeX uses). Unset = not accepted.
+EXPORT_CREDENTIAL = os.environ.get('EXPORT_CREDENTIAL', '')
+if len(GAS_CREDENTIAL) < 16:
+    # Without a credential every route would be open to anyone who can reach nginx: refuse to start instead.
+    raise SystemExit('BibMan: GAS_CREDENTIAL is missing or shorter than 16 characters; refusing to start. '
+                     'Set it in /etc/systemd/system/bibman.service (openssl rand -hex 16).')
 PORT           = int(os.environ.get('PORT', 8081))
 PDF_FOLDER_ID  = os.environ.get('PDF_FOLDER_ID', '')   # Drive folder for auto-saved PDFs
 CHUNK_WORDS    = 150
@@ -246,9 +257,12 @@ def check_gas_credential(credential: str) -> bool:
     The GAS proxy injects GAS_CREDENTIAL into every request header.
     This prevents direct access to the ngrok URL bypassing GAS.
     """
-    if not GAS_CREDENTIAL:
-        return True  # no credential configured — open access (localhost only anyway)
-    return credential == GAS_CREDENTIAL
+    return bool(credential) and hmac.compare_digest(credential.encode(), GAS_CREDENTIAL.encode())
+
+def check_export_credential(credential: str) -> bool:
+    """True for the read-only EXPORT_CREDENTIAL (only if one is configured and at least 16 characters)."""
+    return (len(EXPORT_CREDENTIAL) >= 16 and bool(credential)
+            and hmac.compare_digest(credential.encode(), EXPORT_CREDENTIAL.encode()))
 
 def gas_auth_required(f):
     """
@@ -268,6 +282,25 @@ def gas_auth_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def export_auth_required(f):
+    """
+    Decorator for the bibliography-export routes that gooTeX calls (/api/export/bib,
+    /api/export/bib-text, /api/libraries/<name>/stats). Accepts the full GAS_CREDENTIAL
+    or the read-only EXPORT_CREDENTIAL. Every other route accepts GAS_CREDENTIAL only.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        cred = request.headers.get('X-BibMan-Credential', '')
+        if not cred and request.is_json:
+            cred = (request.json or {}).get('credential', '')
+        if check_gas_credential(cred):
+            update_gas_webapp_url()
+            return f(*args, **kwargs)
+        if check_export_credential(cred):
+            return f(*args, **kwargs)
+        return err('Unauthorized', 401)
+    return decorated
+
 def get_request_tokens():
     """
     Extract caller-supplied API keys from request headers.
@@ -281,6 +314,8 @@ def get_request_tokens():
 
 def get_request_models() -> tuple:
     """Extract model names from request headers, falling back to module constants."""
+    if not has_request_context():  # background threads (nightly job, ingest) have no request
+        return EMBED_MODEL, 'models/gemini-2.0-flash'
     embed_model    = request.headers.get('X-Embed-Model',    '').strip() or EMBED_MODEL
     generate_model = request.headers.get('X-Generate-Model', '').strip() or 'models/gemini-2.0-flash'
     return embed_model, generate_model
@@ -628,11 +663,15 @@ def chunk_text(pages, paper_id: str) -> list:
 EMBED_MODEL    = 'models/gemini-embedding-001'
 EMBED_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
+def _gemini_headers(gemini_key: str) -> dict:
+    """Send the Gemini key as a header so it never appears in URLs, exception text or logs."""
+    return {'x-goog-api-key': gemini_key}
+
 def embed_passages(passages: list, gemini_key: str = '', embed_model: str = '') -> list:
     if not gemini_key:
         return []
     _embed_model = embed_model or EMBED_MODEL
-    url     = f'{EMBED_BASE_URL}/{_embed_model}:batchEmbedContents?key={gemini_key}'
+    url     = f'{EMBED_BASE_URL}/{_embed_model}:batchEmbedContents'
     results = []
     batch_size = 20
     for i in range(0, len(passages), batch_size):
@@ -646,7 +685,7 @@ def embed_passages(passages: list, gemini_key: str = '', embed_model: str = '') 
             for t in texts
         ]}
         try:
-            r = requests.post(url, json=payload, timeout=60)
+            r = requests.post(url, headers=_gemini_headers(gemini_key), json=payload, timeout=60)
             r.raise_for_status()
             embeddings = [e['values'] for e in r.json()['embeddings']]
             for p, vec in zip(batch, embeddings):
@@ -660,8 +699,8 @@ def embed_query(text: str, gemini_key: str = '') -> bytes | None:
     if not gemini_key:
         return None
     try:
-        url = f'{EMBED_BASE_URL}/{EMBED_MODEL}:embedContent?key={gemini_key}'
-        r   = requests.post(url, json={
+        url = f'{EMBED_BASE_URL}/{EMBED_MODEL}:embedContent'
+        r   = requests.post(url, headers=_gemini_headers(gemini_key), json={
             'model':    EMBED_MODEL,
             'content':  {'parts': [{'text': text}]},
             'taskType': 'RETRIEVAL_QUERY',
@@ -889,7 +928,7 @@ def update_corpus_terms(conn, paper_id: str = None):
         log.warning(f'update_corpus_terms failed: {e}')
 
 def suggest_synonyms_for_paper(paper_id: str, library_id: str, conn,
-                                gemini_key: str = '') -> int:
+                                gemini_key: str = '', generate_model: str = '') -> int:
     if not gemini_key:
         return 0
     rows = conn.execute(
@@ -915,9 +954,9 @@ def suggest_synonyms_for_paper(paper_id: str, library_id: str, conn,
         f'PASSAGE:\n{sample_text}'
     )
     url = (f'https://generativelanguage.googleapis.com/v1beta/'
-           f'{get_request_models()[1]}:generateContent?key={gemini_key}')
+           f'{generate_model or get_request_models()[1]}:generateContent')
     try:
-        r = requests.post(url, json={
+        r = requests.post(url, headers=_gemini_headers(gemini_key), json={
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 1024},
         }, timeout=30)
@@ -1241,7 +1280,7 @@ def run_cron():
                         try:
                             conn = get_db_connection()
                             n = suggest_synonyms_for_paper(
-                                row['id'], row['library_id'], conn, gemini_key
+                                row['id'], row['library_id'], conn, gemini_key, generate_model
                             )
                             conn.close()
                             if n:
@@ -1279,7 +1318,7 @@ def health():
 
 # ── Library stats (lightweight, for cache invalidation) ──────────────────────
 @app.route('/api/libraries/<library_name>/stats')
-@gas_auth_required
+@export_auth_required
 def library_stats(library_name):
     conn = get_db_connection()
     lib = conn.execute(
@@ -1382,7 +1421,7 @@ def get_bib():
 
 # ── Export bib (GAS-authenticated) ───────────────────────────────────────────
 @app.route('/api/export/bib-text')
-@gas_auth_required
+@export_auth_required
 def export_bib_text():
     """Same as /get_bib but requires GAS credential. For external access."""
     return get_bib()
@@ -2298,10 +2337,10 @@ def extract_metadata():
 
     gemini_url = (
         'https://generativelanguage.googleapis.com/v1beta/'
-        f'{get_request_models()[1]}:generateContent?key={gemini_key}'
+        f'{get_request_models()[1]}:generateContent'
     )
     try:
-        gr = requests.post(gemini_url, json={
+        gr = requests.post(gemini_url, headers=_gemini_headers(gemini_key), json={
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 400},
         }, timeout=25)
@@ -2445,8 +2484,10 @@ def create_annotation():
 @app.route('/api/annotations/<ann_id>', methods=['PATCH'])
 @gas_auth_required
 def update_annotation(ann_id):
-    data    = request.json or {}
-    allowed = {'text', 'user_note', 'color', 'page_number', 'x1', 'y1', 'x2', 'y2'}
+    data    = dict(request.json or {})
+    if 'text' in data and 'user_note' not in data:  # dashboard sends both; table only has user_note
+        data['user_note'] = data['text']
+    allowed = {'user_note'}
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return err('No valid fields')
@@ -2553,6 +2594,10 @@ def venn_search():
         synonyms.setdefault(a, set()).add(b)
         synonyms.setdefault(b, set()).add(a)
 
+    def _fts_quote(t):
+        """Quote one term for an FTS5 MATCH so characters like + / * - are taken literally."""
+        return '"' + t.replace('"', '""') + '"'
+
     def expand_terms(q):
         """Return (include_terms_set, exclude_term, fts_query_string, skip_semantic).
 
@@ -2576,7 +2621,7 @@ def venn_search():
 
         if verbatim:
             # Strict verbatim — exact FTS phrase only, no synonyms, no semantic
-            fts = f'"{include_raw.lower()}"'
+            fts = _fts_quote(include_raw.lower())
             expanded = set(words)
             return expanded, '', fts, True  # skip_semantic=True
 
@@ -2584,7 +2629,7 @@ def venn_search():
             # Smart phrase — FTS phrase + whole-phrase synonyms only
             phrase_key = include_raw.lower()
             phrase_synonyms = synonyms.get(phrase_key, set())
-            fts = f'"{phrase_key}"'
+            fts = _fts_quote(phrase_key)
             if use_synonyms and phrase_synonyms:
                 valid_syns = sorted(
                     {t for t in phrase_synonyms if len(t) >= 2},
@@ -2592,7 +2637,7 @@ def venn_search():
                 )[:8]
                 if valid_syns:
                     fts += ' OR ' + ' OR '.join(
-                        f'"{t}"' if ' ' in t else t for t in valid_syns
+                        _fts_quote(t) for t in valid_syns
                     )
             expanded = set(words)
             return expanded, '', fts, False  # skip_semantic=False
@@ -2610,7 +2655,7 @@ def venn_search():
             synonym_words = valid - original_words
             synonym_list = sorted(synonym_words, key=len)[:max(0, 12 - len(original_words))]
             valid_list = sorted(original_words) + synonym_list
-            fts = ' OR '.join(f'"{t}"' if ' ' in t else t for t in valid_list)
+            fts = ' OR '.join(_fts_quote(t) for t in valid_list)
             return expanded, '', fts, False  # skip_semantic=False
 
     ads_token, gemini_key = get_request_tokens()
@@ -3430,7 +3475,7 @@ def import_bib_file():
 # ── BibTeX export (for gooTeX integration) ───────────────────────────────────
 
 @app.route('/api/export/bib', methods=['POST'])
-@gas_auth_required
+@export_auth_required
 def export_bib():
     """
     Given a list of bibkeys, return matching BibTeX entries as a single string.
