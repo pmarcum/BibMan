@@ -2631,7 +2631,7 @@ def venn_search():
         if verbatim:
             # Strict verbatim — exact FTS phrase only, no synonyms, no semantic
             fts = _fts_quote(include_raw.lower())
-            expanded = set(words)
+            expanded = {include_raw.lower()}  # highlight the exact phrase, not its separate words
             return expanded, '', fts, True  # skip_semantic=True
 
         if is_phrase:
@@ -2639,6 +2639,7 @@ def venn_search():
             phrase_key = include_raw.lower()
             phrase_synonyms = synonyms.get(phrase_key, set())
             fts = _fts_quote(phrase_key)
+            valid_syns = []
             if use_synonyms and phrase_synonyms:
                 valid_syns = sorted(
                     {t for t in phrase_synonyms if len(t) >= 2 and _fts_useful(t)},
@@ -2648,7 +2649,9 @@ def venn_search():
                     fts += ' OR ' + ' OR '.join(
                         _fts_quote(t) for t in valid_syns
                     )
-            expanded = set(words)
+            # Highlight the phrase and the synonyms actually searched, not its separate words
+            # (highlighting a lone "c" from "C II" would mark every word starting with c).
+            expanded = {phrase_key, *valid_syns}
             return expanded, '', fts, False  # skip_semantic=False
 
         else:
@@ -2665,7 +2668,7 @@ def venn_search():
             synonym_list = sorted(synonym_words, key=len)[:max(0, 12 - len(original_words))]
             valid_list = sorted(original_words) + synonym_list
             fts = ' OR '.join(_fts_quote(t) for t in valid_list)
-            return expanded, '', fts, False  # skip_semantic=False
+            return set(valid_list), '', fts, False  # highlight exactly what was searched
 
     ads_token, gemini_key = get_request_tokens()
 
