@@ -190,7 +190,15 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
 
 Give gooTeX its own **read-only** key rather than `GAS_CREDENTIAL`:
 
-1. Generate one (`openssl rand -hex 16`) and add `Environment=EXPORT_CREDENTIAL=<value>` to `bibman.service`, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. BibMan accepts this key on the three routes above and refuses it everywhere else.
+1. On the VM, put the key in its own small settings file next to the service (your `bibman.service` stays untouched):
+   ```
+   NEWKEY=$(openssl rand -hex 16); echo "$NEWKEY"        # keep this value; gooTeX needs it
+   sudo mkdir -p /etc/systemd/system/bibman.service.d
+   printf '[Service]\nEnvironment=EXPORT_CREDENTIAL=%s\n' "$NEWKEY" | sudo tee /etc/systemd/system/bibman.service.d/export-credential.conf >/dev/null
+   sudo chmod 600 /etc/systemd/system/bibman.service.d/export-credential.conf
+   sudo systemctl daemon-reload && sudo systemctl restart bibman
+   ```
+   BibMan accepts this key on the three routes above and refuses it everywhere else. Check it: `curl -s -o /dev/null -w "%{http_code}\n" -H "X-BibMan-Credential: $NEWKEY" "https://<host>/bibman/api/export/bib-text?library=<name>"` prints `200`, and the same request to `/bibman/api/papers` prints `401`. To remove the key, delete that file, then `daemon-reload` and restart.
 2. Put the same value in gooTeX's `BIBMAN_CREDENTIAL` (its systemd drop-in and its template `Config.js`). gooTeX's name means "the credential for reaching BibMan"; its value is BibMan's `EXPORT_CREDENTIAL`.
 
 That way gooTeX, and anyone who can open a gooTeX document's script, holds a key that can read bibliographies but not change or delete anything. If gooTeX shares the server, keep BibMan on `127.0.0.1:8081`, keep the `/bibman/` nginx route, and don't change those three routes' request or response shapes. Keep the `/gootex/` block in the nginx config only if gooTeX runs on the same machine.

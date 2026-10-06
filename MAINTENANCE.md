@@ -11,6 +11,7 @@ For whoever hosts a BibMan instance. Setup is in [DEPLOY.md](DEPLOY.md). This pa
 | `/home/bibman/bibman_768_i8.usearch` | Semantic-search index, loaded into memory when the service starts. Can always be rebuilt from the database. |
 | `/home/bibman/bibman_config.json` | Small runtime settings the server writes itself (current library, last-seen Apps Script URL). |
 | `/etc/systemd/system/bibman.service` | Service definition, including `SESSION_SECRET` and `GAS_CREDENTIAL`. |
+| `/etc/systemd/system/bibman.service.d/export-credential.conf` | Optional: the read-only `EXPORT_CREDENTIAL` for gooTeX. |
 | `/etc/nginx/sites-available/proxy-router` | HTTPS front door; routes `/bibman/` to port 8081 (and `/gootex/` to 8082 if present). |
 
 The database path comes from `DB_PATH` in the service file; the index and config file always sit in the same folder as the database.
@@ -104,7 +105,7 @@ If gooTeX shares the server and still uses `GAS_CREDENTIAL` rather than its own 
 ## Rotating secrets
 
 - **`GAS_CREDENTIAL`** (full access; used by the three Apps Script projects and built into the bookmarklet): generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value. If gooTeX still uses `GAS_CREDENTIAL` rather than its own `EXPORT_CREDENTIAL`, change its `BIBMAN_CREDENTIAL` at the same time, or better, move it to `EXPORT_CREDENTIAL` first (DEPLOY.md, *Using BibMan with gooTeX*).
-- **`EXPORT_CREDENTIAL`** (read-only, bibliography export only; used by gooTeX): change it in `bibman.service` and in gooTeX's `BIBMAN_CREDENTIAL` together, then restart both services.
+- **`EXPORT_CREDENTIAL`** (read-only, bibliography export only; used by gooTeX): it lives in its own file, `/etc/systemd/system/bibman.service.d/export-credential.conf`. Change it there and in gooTeX's `BIBMAN_CREDENTIAL` together, then `sudo systemctl daemon-reload` and restart both services.
 - **`SESSION_SECRET`**: change it in `bibman.service` and restart.
 - **ADS token / Gemini key**: change the Script Properties in the Frontend and Capture projects. Nothing on the server stores them.
 
