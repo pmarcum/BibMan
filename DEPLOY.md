@@ -140,7 +140,8 @@ Only rows with both an email and a name count. Column C isn't used by the access
 | `BOOKMARKLET_CAPTURE_WEBAPP_URL` | filled in after 2d |
 | `PDF_FOLDER_ID` | *optional*: Drive folder where saved PDFs go |
 | `EXPORT_FOLDER_ID` | *optional*: Drive folder for `.bib` exports |
-| `EMBED_MODEL`, `GENERATE_MODEL` | *optional*: defaults `models/gemini-embedding-001`, `models/gemini-2.0-flash` |
+| `GENERATE_MODEL` | **set this**: a current Gemini text model with the `models/` prefix, e.g. `models/gemini-3.5-flash-lite`. The code's built-in fallback (`models/gemini-2.0-flash`) was shut down by Google on 1 June 2026. It's used for synonym suggestions and for reading a paper's details from a web page. Set it in **both** Frontend and Capture. |
+| `EMBED_MODEL` | *optional*: default `models/gemini-embedding-001`. **Never change it** once papers are added: every stored embedding and the search index depend on it. |
 | `CLOUDFLARE_URL` | *optional*: a fallback server URL, tried when DuckDNS doesn't answer |
 
 4. **Deploy → New deployment → Web app**: *Execute as: User accessing the web app*; *Who has access: Anyone with a Google account*. Copy the web app URL. This is your group's dashboard link.

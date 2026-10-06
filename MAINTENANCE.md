@@ -50,21 +50,28 @@ To check the trigger: open the Frontend project → **Triggers** (clock icon) �
 | `bibman_backfill_search_ids.py` | Fills in missing search IDs. Dry run by default; `--apply` writes. It refuses to write unless the formula reproduces every existing ID and no new ID collides. | Only with `--apply`, and only rows that have no ID |
 | `bibman_rebuild_usearch.py` | Rebuilds the index from stored embeddings (no Gemini calls). It writes to a temporary file, checks it, keeps the current index as `bibman_768_i8.usearch.prev`, then installs the new one. It does not restart BibMan. | The index files only; the database is opened read-only |
 
-**Rebuilding.** Do this when nobody is using BibMan **or gooTeX**: on a 1 GB machine the build needs about 420 MB for a 390,000-passage library.
+**Rebuilding.** Do this when nobody is using BibMan **or gooTeX**. The build needs about 420 MB of memory for a 390,000-passage library, and `nice` lowers its CPU priority but not its memory use.
+
+1. **Back up first:** take a snapshot of the VM's disk (Compute Engine → Disks → the VM's disk → *Create snapshot*). It costs cents and covers everything, including the database.
+2. **Run the scripts:**
 ```
 cd /home/bibman/bibman
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
+sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --dry-run      # checks paths and the .prev backup
 sudo -u bibman nice -n 19 venv/bin/python bibman_rebuild_usearch.py     # 10-40 minutes
 sudo systemctl restart bibman
-sudo journalctl -u bibman -n 8 --no-pager                               # "USearch index loaded: N vectors" and the method
+sudo journalctl -u bibman -n 8 --no-pager     # expect "USearch index loaded: N vectors" and "compression method: C"
 ```
+3. **About the old index:** the rebuild keeps it as `bibman_768_i8.usearch.prev` and **refuses to overwrite** an existing `.prev`. For later routine rebuilds, once you're happy with the current index, add `--replace-prev` (or delete the old `.prev` yourself).
+4. **About the fill-in:** `bibman_backfill_search_ids.py` also narrows the database trigger `passages_au` so it fires only when a passage's *text* changes. Before, setting an ID would also rewrite that passage's keyword-index entry. New installations get the narrowed trigger from `schema.sql`.
+
 **To go back to the previous index:**
 ```
-cd /home/bibman && sudo -u bibman mv bibman_768_i8.usearch.prev bibman_768_i8.usearch
+sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_rebuild_usearch.py --rollback
 sudo systemctl restart bibman
 ```
-If the previous index was the original April 2026 one, also delete `bibman_768_i8.usearch.method`, so the server uses method A again.
+This swaps the index and its method file with the `.prev` pair. Running it again swaps them back.
 
 Never run the old one-off `reindex_i8.py`: it overwrites the index file that the running server has open.
 
