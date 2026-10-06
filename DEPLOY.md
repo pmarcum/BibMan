@@ -178,14 +178,14 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
 ## Security notes
 
 - **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, along with the Gemini key, so only put people you trust on the access list. If someone leaves, generate a new value, change it in `bibman.service` and all three projects, restart, and have everyone re-drag the bookmarklet.
-- **`/get_bib` has no credential check.** It exists so gooTeX can fetch a bibliography over `localhost:8081` on the same VM. The supplied nginx config blocks it at the public address; keep that block if you edit the config.
+- **`/get_bib` has no credential check**, and nothing needs to reach it from outside the VM (gooTeX does not use it). The supplied nginx config blocks it at the public address; keep that block if you edit the config. Don't delete the Python function `get_bib()` itself: the authenticated `/api/export/bib-text` route uses it.
 - **Never commit** `bibman.db`, the `.usearch` index, `bibman_config.json`, or a filled-in `bibman.service`. The repo's `.gitignore` covers the common names.
 
 ## Using BibMan with gooTeX
 
-On a VM that also runs [gooTeX](https://github.com/pmarcum/gooTeX), gooTeX fetches bibliographies from BibMan over the VM's loopback interface, so no extra configuration is needed on BibMan's side:
+[gooTeX](https://github.com/pmarcum/gooTeX) uses three BibMan routes, all authenticated with the header `X-BibMan-Credential`, whose value must equal BibMan's `GAS_CREDENTIAL` (gooTeX calls it `BIBMAN_CREDENTIAL`, set both in its systemd drop-in and in its template `Config.js`):
 
-- `POST http://localhost:8081/api/export/bib` with header `X-BibMan-Credential: <GAS_CREDENTIAL>` and body `{"bibkeys": [...], "library": "<name>"}` returns `{"bibtex", "found", "missing", "total_requested"}`.
-- `GET http://localhost:8081/get_bib?library=<name>` returns the whole library as BibTeX.
+- Its compile server, on the same VM: `POST http://localhost:8081/api/export/bib` with body `{"bibkeys": [...], "library": "<name>"}`; BibMan returns `{"bibtex", "found", "missing", "total_requested"}`.
+- Its Apps Script, through nginx: `GET https://<host>/bibman/api/libraries/<name>/stats` (reads `last_rowid`) and `GET https://<host>/bibman/api/export/bib-text?library=<name>` (the Refs sidebar).
 
-Keep the `/gootex/` block in the nginx config only if gooTeX runs on the same machine.
+So, if gooTeX shares the server: keep BibMan on `127.0.0.1:8081`, keep the `/bibman/` nginx route, don't change those three routes' request or response shapes, and change `BIBMAN_CREDENTIAL` in gooTeX whenever you change `GAS_CREDENTIAL`. Keep the `/gootex/` block in the nginx config only if gooTeX runs on the same machine.

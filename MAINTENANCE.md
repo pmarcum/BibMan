@@ -45,7 +45,7 @@ Rebuild it with `bibman_rebuild_usearch.py` (it reads embeddings already in the 
 1. **New passages don't get a `search_id`.** The add-paper code inserts passages without filling `passages.search_id`, and the rebuild only indexes passages that have one. Fill the missing ones before rebuilding, e.g. in Python against the database: `UPDATE passages SET search_id = ? WHERE id = ?` for every row where `search_id IS NULL`, using the formula above.
 2. **The rebuild writes the index next to the script, not next to the database.** `bibman_rebuild_usearch.py` saves to `/home/bibman/bibman/bibman_768_i8.usearch`, but the server loads `/home/bibman/bibman_768_i8.usearch`. Move the new file (and its `.timestamp`) up one folder before restarting. The script also expects the sqlite-vec library as `vec0.so` beside it: copy it from the venv (`venv/bin/python -c "import sqlite_vec; print(sqlite_vec.loadable_path())"` prints its location).
 
-Run rebuilds when nobody is using BibMan: on a 1 GB machine the rebuild competes with the running service for memory.
+Run rebuilds when nobody is using BibMan **or gooTeX**: on a 1 GB machine the rebuild holds the whole new index in memory and competes with both services, and the script restarts BibMan when it finishes. Never run the old `reindex_i8.py`: it overwrites the index file the running server has open.
 
 ## Updating the server code
 
@@ -89,7 +89,7 @@ To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the 
 
 ## Rotating secrets
 
-- **`GAS_CREDENTIAL`**: generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value.
+- **`GAS_CREDENTIAL`**: generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value. **If gooTeX runs on the same server, change its `BIBMAN_CREDENTIAL` to the same new value at the same time** (its systemd drop-in and its template `Config.js`); until you do, gooTeX compiles fall back to stale or empty bibliographies.
 - **`SESSION_SECRET`**: change it in `bibman.service` and restart.
 - **ADS token / Gemini key**: change the Script Properties in the Frontend and Capture projects. Nothing on the server stores them.
 
