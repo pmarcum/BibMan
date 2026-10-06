@@ -89,7 +89,8 @@ To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the 
 
 ## Rotating secrets
 
-- **`GAS_CREDENTIAL`**: generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value. **If gooTeX runs on the same server, change its `BIBMAN_CREDENTIAL` to the same new value at the same time** (its systemd drop-in and its template `Config.js`); until you do, gooTeX compiles fall back to stale or empty bibliographies.
+- **`GAS_CREDENTIAL`** (full access; used by the three Apps Script projects and built into the bookmarklet): generate a new one (`openssl rand -hex 16`), set it in `bibman.service` and in the Script Properties of all three Apps Script projects, then `sudo systemctl daemon-reload && sudo systemctl restart bibman`. Users must re-drag the bookmarklet from **Utilities**, since the old one carries the old value. If gooTeX still uses `GAS_CREDENTIAL` rather than its own `EXPORT_CREDENTIAL`, change its `BIBMAN_CREDENTIAL` at the same time, or better, move it to `EXPORT_CREDENTIAL` first (DEPLOY.md, *Using BibMan with gooTeX*).
+- **`EXPORT_CREDENTIAL`** (read-only, bibliography export only; used by gooTeX): change it in `bibman.service` and in gooTeX's `BIBMAN_CREDENTIAL` together, then restart both services.
 - **`SESSION_SECRET`**: change it in `bibman.service` and restart.
 - **ADS token / Gemini key**: change the Script Properties in the Frontend and Capture projects. Nothing on the server stores them.
 
