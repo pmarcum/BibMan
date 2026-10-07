@@ -41,6 +41,18 @@ BibMan needs no crontab entries on the VM. If gooTeX shares the VM, its own mont
 
 To check the nightly trigger: open the Frontend project → **Triggers** (clock icon) → `runNightlyCron`. Its executions log (**Executions**, the list icon) shows whether each night's run succeeded.
 
+## Gemini billing (Prepay)
+
+Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). BibMan then quietly falls back to keyword-only search, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.
+
+- Check the balance in AI Studio now and then. BibMan's usage is small (cents per month for one group).
+- To confirm a key works from the VM without saving it anywhere:
+```
+read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-api-key: $K" -H "Content-Type: application/json" -d '{"content":{"parts":[{"text":"test"}]}}' https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent | head -c 700; echo; unset K
+```
+  A working key returns `{"embedding": {"values": [...`; otherwise Google's error message says why.
+- The alternative is the free tier (a key in a project with no billing). It costs nothing but has rate limits, and Google may use the content sent (search phrases, passage and note text) to improve its products.
+
 ## The semantic-search index
 
 **How it works**
