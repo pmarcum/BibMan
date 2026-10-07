@@ -146,9 +146,9 @@ USEARCH_METHOD_PATH = DB_PATH.parent / 'bibman_768_i8.usearch.method'  # written
 USEARCH_METHOD = 'A'   # no file = the original April 2026 index (x127, queries sent as floats)
 
 def search_id_for(passage_id: str) -> int:
-    """Search-index key for a passage: first 16 hex digits of its UUID, as a 63-bit integer.
-    Must match bibman_backfill_search_ids.py and the IDs already in the database."""
-    return int(passage_id.replace('-', '')[:16], 16) & 0x7FFFFFFFFFFFFFFF
+    """Search-index key for a passage: first 15 hex digits of its UUID, as a 60-bit integer (the April 2026
+    migration's rule, prep_search_ids.py). Must match bibman_backfill_search_ids.py and the IDs in the database."""
+    return int(passage_id.replace('-', '')[:15], 16)
 
 def quantize_query(v):
     """Compress a 768-dim query exactly like the index's vectors (see bibman_rebuild_usearch.py)."""

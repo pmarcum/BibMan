@@ -19,11 +19,10 @@ from usearch.index import Index
 
 DB   = os.environ.get('DB_PATH', '/home/bibman/bibman.db')
 IDX  = os.path.join(os.path.dirname(DB), 'bibman_768_i8.usearch')
-MASK = 0x7FFFFFFFFFFFFFFF
 DIM  = 768
 t0   = time.time()
 
-def search_id(passage_uuid): return int(passage_uuid.replace('-', '')[:16], 16) & MASK
+def search_id(passage_uuid): return int(passage_uuid.replace('-', '')[:15], 16)   # April 2026 rule
 def vec(blob): return np.frombuffer(blob, dtype=np.float32)[:DIM].astype(np.float32)
 METHODS = {   # how a 768-dim float vector becomes the int8 vector stored in the index
     'A live-style  (x127, no normalising)': lambda v: (v * 127).astype(np.int8),
