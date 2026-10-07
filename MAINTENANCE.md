@@ -125,9 +125,17 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 | Frontend web app | `FRONTEND_THINCLIENT_VERSION` | `bibman_frontend_thinclient_webapp_version` |
 | Capture web app | `BOOKMARKLET_CAPTURE_VERSION` | `bibman_bookmarklet_capture_webapp_version` |
 
-Current versions (October 2026): Core library **3** (adds the per-call access check), used by the dashboard web app. The bookmarklet-capture web app is still pinned to Core 1, which is fine: it doesn't use the changed code. When you publish, set `bibman_core_library_version` in `version.json` **and** the Core project's `BIBMAN_CORE_LIBRARY_VERSION` Script Property to `3` together. Otherwise your own dashboard shows an "update available" banner.
+**Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's Script Property equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the property records which release they installed (copied from `version.json` at the time), which need not equal their own deployment count.
 
-To release a change to one of them: update its files in `apps_script/`, deploy a new version in the Apps Script editor (for the Core library, also move each web app's library version up under **Libraries**), bump its Script Property, then bump the matching number and `…_notes` text in `version.json`.
+Current versions (7 October 2026): Core library **3** (adds the per-call access check), Frontend web app **5**, Capture web app **2**. Both web apps select Core version **3** under **Libraries**.
+
+To release a change:
+1. Update the files in `apps_script/`, paste them into the project, and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
+2. For a Core change: in **each** web app, open **Libraries → BibManCore**, select the new Core version, then redeploy that web app the same way. A web app's live deployment is a snapshot: changing the library setting in the editor has no effect until the web app is redeployed.
+3. Set each changed project's Script Property to its new deployment number.
+4. **Then** update the matching numbers and `…_notes` in `version.json` on `main`. In this order no instance shows a false "update available" banner; the other order shows one until the property is updated.
+
+The dashboard banners cover the Core library and the Frontend web app (there is no Capture banner). The Core check compares `version.json` with the Core project's Script Property, so it cannot tell whether each web app actually selects the newest Core: that is step 2's job.
 
 **Anything pushed to `main` at the repo root is live for every instance immediately**: `Index.html`, `bookmarklet.js`, `version.json`, `favicon.png` and `synonyms/*.tsv` are fetched from `main` at run time. Test changes to those on a copy before pushing, and don't move or rename them.
 
