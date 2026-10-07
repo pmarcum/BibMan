@@ -1,0 +1,24 @@
+# BibMan data — never commit (the real library, embeddings and ANN index live only on the server)
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.usearch
+*.index
+# Secrets
+.env
+*.env
+*service_account*.json
+*credentials*.json
+cloud/**/secrets*
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+# Server runtime files that live next to the DB (library-specific, never in the repo)
+bibman_config.json
+backfill_list.txt
+*.usearch.timestamp
+*.log
+vec0.so

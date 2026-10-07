@@ -1,0 +1,19 @@
+{
+  "timeZone": "America/Los_Angeles",
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "dependencies": {
+    "libraries": [
+      {
+        "userSymbol": "BibManCore",
+        "version": "1",
+        "libraryId": "REPLACE_WITH_YOUR_CORE_LIBRARY_SCRIPT_ID",
+        "developmentMode": false
+      }
+    ]
+  },
+  "webapp": {
+    "executeAs": "USER_DEPLOYING",
+    "access": "ANYONE_ANONYMOUS"
+  }
+}
