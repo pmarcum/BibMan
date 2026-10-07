@@ -35,7 +35,7 @@ curl -s https://YOUR-SUBDOMAIN.duckdns.org/health
 
 **Why the nightly job runs from Apps Script and not from the VM's crontab:** the VM never stores the Gemini key. Each user's key lives only in Script Properties and is sent with each request, so a job on the VM would have no key to use. The Apps Script trigger supplies it each night. This also means a compromised VM exposes no Gemini key at rest. (The old crontab lines, and those in `bibman_cron.py`'s docstring, are disabled and superseded.)
 
-**Why the index rebuild isn't scheduled:** on an e2-micro it is heavy (10–40 minutes, a few hundred MB of memory), it should run when nobody is using BibMan or gooTeX, and the new index only takes effect after a restart. A person should watch it and check the result.
+**Why the index rebuild isn't scheduled:** on an e2-micro it is slow and heavy (about 4 hours for ~390,000 passages, because the e2-micro is held to about a quarter of a CPU for sustained work; a few hundred MB of memory), it should run when nobody is using BibMan or gooTeX, and the new index only takes effect after a restart. A person should watch it and check the result.
 
 BibMan needs no crontab entries on the VM. If gooTeX shares the VM, its own monthly cache cleanup is in the `bibman` user's crontab; leave that alone.
 
@@ -68,7 +68,9 @@ cd /home/bibman/bibman
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
 sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --dry-run      # checks paths and the .prev backup
-sudo -u bibman nice -n 19 venv/bin/python bibman_rebuild_usearch.py     # 10-40 minutes
+# about 4 hours for ~390,000 passages on an e2-micro; runs in the background, so a dropped SSH session doesn't stop it
+sudo -u bibman nohup nice -n 19 venv/bin/python bibman_rebuild_usearch.py > ~/rebuild.log 2>&1 &
+tail -f ~/rebuild.log                          # watch progress (Ctrl+C stops watching, not the rebuild); wait for "installed"
 sudo systemctl restart bibman
 sudo journalctl -u bibman -n 8 --no-pager     # expect "USearch index loaded: N vectors" and "compression method: C"
 ```
