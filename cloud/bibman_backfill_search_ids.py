@@ -6,7 +6,8 @@ Passages added before late April 2026 got a search_id from a one-off migration; 
 did not (the add-paper code never set it, fixed in the 6 Oct 2026 server). Without an ID a passage can
 never enter the search index, so meaning-based search cannot find it.
 
-    search_id = first 16 hex digits of the passage UUID (dashes removed), as an integer, masked to 63 bits
+    search_id = first 15 hex digits of the passage UUID (dashes removed), as an integer (60 bits)
+    (the rule the April 2026 migration used, prep_search_ids.py)
 
 Safe by design:
   * DRY RUN by default: shows what it would do and changes nothing. Add --apply to write.
@@ -25,13 +26,12 @@ Run as the bibman user, with BibMan's own Python:
 import os, sys, sqlite3
 
 DB    = os.environ.get('DB_PATH', '/home/bibman/bibman.db')
-MASK  = 0x7FFFFFFFFFFFFFFF
 APPLY = '--apply' in sys.argv
 OLD_HEAD = 'CREATE TRIGGER passages_au AFTER UPDATE ON passages BEGIN'
 NEW_HEAD = 'CREATE TRIGGER passages_au AFTER UPDATE OF text ON passages BEGIN'
 
 def search_id(passage_uuid: str) -> int:
-    return int(passage_uuid.replace('-', '')[:16], 16) & MASK
+    return int(passage_uuid.replace('-', '')[:15], 16)
 
 con = sqlite3.connect(DB, timeout=60, isolation_level=None) if APPLY else \
       sqlite3.connect(f'file:{DB}?mode=ro', uri=True, timeout=60, isolation_level=None)
