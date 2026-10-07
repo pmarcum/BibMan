@@ -26,11 +26,20 @@ sudo systemctl restart bibman                # restart (takes a few seconds; rel
 curl -s https://YOUR-SUBDOMAIN.duckdns.org/health
 ```
 
-## Nightly processing
+## Scheduled jobs
 
-Some work is too slow to do while a user waits for a paper to be added: generating embeddings for new passages and generating synonym pairs. The dashboard project's time trigger (created by `setupCronTrigger`) calls `POST /api/cron/run` once a day at 5 am Pacific, passing the Gemini key, and the server does the work in the background in small batches. There is no server-side crontab for this; the old cron lines in `bibman_cron.py`'s docstring are superseded.
+| Job | Runs from | When | What it does |
+|---|---|---|---|
+| Nightly processing (`runNightlyCron`) | Apps Script time trigger in the **Frontend** project (created once by `setupCronTrigger`) | Daily, about 5 am Pacific | Calls `POST /api/cron/run` with the Gemini key; the server then embeds new passages and generates synonym pairs in the background, in small batches |
+| Search-index rebuild | **Not scheduled**: run by hand (see "The semantic-search index") | After adding a batch of papers, or monthly | Rebuilds the usearch file from the stored embeddings |
 
-To check the trigger: open the Frontend project → **Triggers** (clock icon) → `runNightlyCron`.
+**Why the nightly job runs from Apps Script and not from the VM's crontab:** the VM never stores the Gemini key. Each user's key lives only in Script Properties and is sent with each request, so a job on the VM would have no key to use. The Apps Script trigger supplies it each night. This also means a compromised VM exposes no Gemini key at rest. (The old crontab lines, and those in `bibman_cron.py`'s docstring, are disabled and superseded.)
+
+**Why the index rebuild isn't scheduled:** on an e2-micro it is heavy (10–40 minutes, a few hundred MB of memory), it should run when nobody is using BibMan or gooTeX, and the new index only takes effect after a restart. A person should watch it and check the result.
+
+BibMan needs no crontab entries on the VM. If gooTeX shares the VM, its own monthly cache cleanup is in the `bibman` user's crontab; leave that alone.
+
+To check the nightly trigger: open the Frontend project → **Triggers** (clock icon) → `runNightlyCron`. Its executions log (**Executions**, the list icon) shows whether each night's run succeeded.
 
 ## The semantic-search index
 
