@@ -1,0 +1,16 @@
+# /etc/systemd/system/cloudflared-quick.service — optional fallback route (Cloudflare quick tunnel)
+# Runs cloud/systemd/start-cloudflared.sh, installed as /usr/local/bin/start-cloudflared.sh
+[Unit]
+Description=Cloudflare Quick Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/bin/start-cloudflared.sh
+Restart=on-failure
+RestartSec=30
+User=bibman
+
+[Install]
+WantedBy=multi-user.target
