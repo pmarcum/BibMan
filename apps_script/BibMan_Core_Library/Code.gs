@@ -183,7 +183,7 @@ function resolveConfig(config) {
 // ═══════════════════════════════════════════════════════════════════════════════
 /**
  * getClientConfig: Returns the subset of config that the browser dashboard
- * needs: baseUrl, credential, geminiKey, current user info, admin flag.
+ * needs: credential, current user info, admin flag (not the VM address or the Gemini key, since Core 4).
  * Has version check so Index.html can show update banners
  */
 function getClientConfig(config) {
@@ -197,9 +197,9 @@ function getClientConfig(config) {
     config.linkedCoreVersion          || BIBMAN_CORE_LIBRARY_VERSION
   );
   return {
-    baseUrl:                           resolved.baseUrl,
+    // baseUrl (the VM address) is no longer sent to the browser (Core 4): the dashboard never connects to the VM directly.
     credential:                        resolved.credential,
-    geminiKey:                         resolved.geminiKey,
+    // geminiKey is no longer sent to the browser (Core 4): Venn Search runs server-side through vennSearch().
     currentUser:                       email ? email.split('@')[0] : '',
     currentUserEmail:                  email || '',
     isAdmin:                           me ? me.is_admin : false,
@@ -286,6 +286,7 @@ function dispatch(config, fn, ...args) {
     searchAdsByTitle:        (title) => searchAdsByTitle(config, title),
     // Search
     vennSearch:            (queries, globalExcludes, library) => vennSearch(config, queries, globalExcludes, library),
+    vennSearchResult:      (jobId) => vennSearchResult(config, jobId),
     searchSuggestions:     (q) => searchSuggestions(config, q),
     // Annotations
     createAnnotation:      (data) => createAnnotation(config, data),
@@ -1052,12 +1053,40 @@ function addPaperManual(config, data) {
 }
 function importBib(config, bibContent, library) { return apiCall(config, 'POST', '/api/papers/import-bib', { bib_content: bibContent, library: library || '' }); }
 // Search
-function vennSearch(config, queries, globalExcludes, library) {
-  return apiCall(config, 'POST', '/api/search/venn', {
-    queries,
-    global_excludes: globalExcludes || [],
-    library: library || '',
-  });
+/**
+ * vennSearch: Venn Search, sent server-to-server from Apps Script, so the browser never connects to the VM
+ * directly (networks that block the VM's domain still work) and the Gemini key stays in Apps Script.
+ *
+ * Since Core 4 the dashboard passes an options object. A large search can take longer than the ~1 minute
+ * Apps Script allows per request, so the server runs it as a background job: this call starts it and waits
+ * up to VENN_WAIT_MS for the result. If it isn't ready, it returns { pending: true, job_id }, and the
+ * dashboard calls vennSearchResult(job_id) until it is. The server gives up after 2 minutes.
+ * The older (queries, globalExcludes, library) form is still accepted and runs as a single request.
+ */
+const VENN_WAIT_MS = 40000, VENN_POLL_MS = 1500;
+function vennSearch(config, queriesOrOpts, globalExcludes, library) {
+  if (Array.isArray(queriesOrOpts)) {
+    return apiCall(config, 'POST', '/api/search/venn', {
+      queries: queriesOrOpts, global_excludes: globalExcludes || [], library: library || '',
+    });
+  }
+  const o = queriesOrOpts || {};
+  const body = { queries: o.queries || [], global_excludes: o.global_excludes || [], library: o.library || '' };
+  ['use_synonyms', 'use_semantic', 'max_results', 'everyone', 'current_user']
+    .forEach(k => { if (o[k] !== undefined) body[k] = o[k]; });
+  const started = apiCall(config, 'POST', '/api/search/venn/start', body);
+  if (!started || !started.job_id) throw new Error('The server did not start the search.');
+  return vennSearchResult(config, started.job_id);
+}
+function vennSearchResult(config, jobId) {
+  const until = Date.now() + VENN_WAIT_MS;
+  while (true) {
+    const r = apiCall(config, 'GET', '/api/search/venn/result/' + encodeURIComponent(jobId));
+    if (r.status === 'done')  return r.result;
+    if (r.status === 'error') throw new Error(r.error || 'The search failed.');
+    if (Date.now() + VENN_POLL_MS > until) return { pending: true, job_id: jobId };
+    Utilities.sleep(VENN_POLL_MS);
+  }
 }
 function searchSuggestions(config, q) { return apiCall(config, 'GET', '/api/search/suggestions', null, { q }); }
 // Annotations

@@ -1,5 +1,13 @@
 # Changelog
 
+## 28 October 2026: Venn Search through Apps Script
+
+- **Venn Search works from networks that block the server's address.** Some workplace and campus networks block dynamic-DNS names such as `*.duckdns.org`, so the dashboard's one direct browser-to-server request, Venn Search, failed there with "Failed to fetch". It now goes through Apps Script like every other dashboard action (Core 4). Because Apps Script allows only about a minute per request and large searches can take longer, the server runs each search as a background job and the dashboard checks back for the result ("Still searching"). Limit: 2 minutes per search.
+- **The Gemini key and the server's address are no longer sent to browsers.** Apps Script adds the key when it calls the server.
+- **Venn Search passes the access-list check** like every other dashboard call.
+- **Clear warning when meaning-based search fails.** If Google refuses the Gemini key (for example, prepaid credit used up), rate-limits it, or doesn't answer in time, the dashboard now says so in a red notice instead of silently showing keyword results only.
+- Versions: Core library 4, Frontend web app 7, Capture web app 3 (both web apps redeployed on Core 4; their code is unchanged).
+
 ## October 2026: packaging for public release, review fixes
 
 The code was reviewed independently (security, correctness, and coexistence with gooTeX). These changes came out of that review and are deployed on the reference server.

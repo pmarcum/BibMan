@@ -2892,28 +2892,34 @@ async function runVennSearch() {
   document.getElementById('results-toolbar').style.display = 'none';
   document.getElementById('upset-results').innerHTML = '';
   try {
-    const response = await fetch(_clientConfig.baseUrl + '/api/search/venn', {
-      method: 'POST',
-      headers: {
-        'Content-Type':        'application/json',
-        'X-BibMan-Credential': _clientConfig.credential,
-        'X-Gemini-Key':        _clientConfig.geminiKey,
-      },
-      body: JSON.stringify({
-        queries,
-        global_excludes: globalExcludes||[],
-        library: _currentLibrary,
-        use_synonyms: _vennUseSynonyms,
-        use_semantic: _vennUseSemantic,
-        max_results: parseInt(document.getElementById('venn-max-results').value) || 200,
-        everyone: !_showMyAnnotationsOnly,
-        current_user: _currentUser
-      })
+    // Sent through Apps Script (server-to-server), so networks that block the server's domain still work
+    // and the Gemini key never reaches the browser. The server runs the search as a background job: if it
+    // isn't finished within about 40 s, Apps Script returns {pending, job_id} and we keep asking for the
+    // result. The server stops a search after 2 minutes.
+    let data = await gas('vennSearch', {
+      queries,
+      global_excludes: globalExcludes||[],
+      library: _currentLibrary,
+      use_synonyms: _vennUseSynonyms,
+      use_semantic: _vennUseSemantic,
+      max_results: parseInt(document.getElementById('venn-max-results').value) || 200,
+      everyone: !_showMyAnnotationsOnly,
+      current_user: _currentUser
     });
-    const data = await response.json();
+    const _vennT0 = Date.now();
+    while (data && data.pending) {
+      if (_vennAborted) return;
+      document.getElementById('upset-pane').innerHTML =
+        `<div class="upset-empty"><span class="spinner"></span>&nbsp; Still searching: ${queryList}`
+        + `<br><span style="color:var(--muted);font-size:11px">Large searches can take up to 2 minutes.</span></div>`;
+      if (Date.now() - _vennT0 > 180000) throw new Error('No answer from the server after 3 minutes. Please try again.');
+      data = await gas('vennSearchResult', data.job_id);
+    }
     if (_vennAborted) return;
     lastSearchData = data;
-    if (data.semantic_skipped) {
+    if (data.semantic_error) {
+      notify('Meaning-based search unavailable: ' + data.semantic_error + ' Showing keyword results only.', 'error', 15000);
+    } else if (data.semantic_skipped) {
       notify('Semantic search skipped — Gemini API unavailable. Showing keyword results only.', 'info', 5000);
       document.getElementById('toggle-semantic').classList.remove('active');
       _vennUseSemantic = false;

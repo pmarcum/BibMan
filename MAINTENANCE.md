@@ -41,9 +41,19 @@ BibMan needs no crontab entries on the VM. If gooTeX shares the VM, its own mont
 
 To check the nightly trigger: open the Frontend project → **Triggers** (clock icon) → `runNightlyCron`. Its executions log (**Executions**, the list icon) shows whether each night's run succeeded.
 
+## How the dashboard reaches the server
+
+Every dashboard action, including Venn Search (since Core 4), goes from the browser to Apps Script, and Apps Script calls the VM server-to-server. Browsers never connect to the VM's address directly. This matters because many workplace and campus networks block dynamic-DNS names such as `*.duckdns.org` (their DNS sends the name to a dead-end address), which breaks any feature that needs a direct browser connection. The exceptions are PDF display: Drive copies are fetched by the browser from Google Drive, and arXiv PDFs through the Cloudflare Worker.
+
+A request through Apps Script must finish within about a minute, but a large Venn Search can take longer on an e2-micro. So Venn Search runs as a background job on the server (`/api/search/venn/start`, then `/api/search/venn/result/<id>`): Apps Script starts it and waits up to 40 seconds; if it isn't finished, the dashboard shows "Still searching" and keeps asking. Agreed limits:
+- **2 minutes per search** (`VENN_JOB_MAX_SECONDS` in the server). After that the dashboard reports a timeout; the server may finish the work in the background, but the result is dropped. If searches time out, try fewer or more specific terms, or a lower **Max results**.
+- Finished results are kept in the server's memory for 10 minutes (`VENN_JOB_KEEP_SECONDS`), then deleted.
+- A restart of BibMan loses searches that were running; run them again.
+- The dashboard itself gives up after 3 minutes without an answer (only if the server stops responding).
+
 ## Gemini billing (Prepay)
 
-Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). BibMan then quietly falls back to keyword-only search, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.
+Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). Venn Search then falls back to keyword-only results and (since 28 October 2026) shows a red warning saying why, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.
 
 - Check the balance in AI Studio now and then. BibMan's usage is small (cents per month for one group).
 - To confirm a key works from the VM without saving it anywhere:
@@ -127,7 +137,7 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 
 **Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's Script Property equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the property records which release they installed (copied from `version.json` at the time), which need not equal their own deployment count.
 
-Current versions (7 October 2026): Core library **3** (adds the per-call access check), Frontend web app **5**, Capture web app **2**. Both web apps select Core version **3** under **Libraries**.
+Current versions (28 October 2026): Core library **4** (Venn Search through Apps Script; no Gemini key in the browser), Frontend web app **7**, Capture web app **3**. Both web apps select Core version **4** under **Libraries**.
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project, and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).

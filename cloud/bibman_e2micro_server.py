@@ -723,9 +723,11 @@ def embed_passages(passages: list, gemini_key: str = '', embed_model: str = '') 
             log.warning(f'Embedding batch {i//batch_size+1} failed: {e}')
     return results
 
-def embed_query(text: str, gemini_key: str = '') -> bytes | None:
+def embed_query_detail(text: str, gemini_key: str = '') -> tuple:
+    """Embed a short text. Returns (vector bytes, '') on success, or (None, reason) where reason is a
+    plain-language explanation for the dashboard ('' when there is simply no key)."""
     if not gemini_key:
-        return None
+        return None, ''
     try:
         url = f'{EMBED_BASE_URL}/{EMBED_MODEL}:embedContent'
         r   = requests.post(url, headers=_gemini_headers(gemini_key), json={
@@ -735,10 +737,28 @@ def embed_query(text: str, gemini_key: str = '') -> bytes | None:
         }, timeout=5)
         r.raise_for_status()
         vec = r.json()['embedding']['values']
-        return struct.pack(f'{len(vec)}f', *vec)
+        return struct.pack(f'{len(vec)}f', *vec), ''
+    except requests.exceptions.Timeout:
+        log.warning('Query embedding failed: Gemini did not respond within 5 s')
+        return None, 'Gemini did not respond within 5 seconds, so meaning-based search was skipped. Try again.'
+    except requests.exceptions.HTTPError as e:
+        code = e.response.status_code if e.response is not None else 0
+        log.warning(f'Query embedding failed: {e}')
+        if code == 402:
+            return None, ('Google refused the Gemini key: the prepaid credit is used up (HTTP 402). '
+                          'Add credit in AI Studio (ai.studio/projects, then your project, then Billing).')
+        if code in (400, 401, 403):
+            return None, (f'Google rejected the Gemini key (HTTP {code}). '
+                          'Check GEMINI_KEY in the Frontend project\'s Script Properties.')
+        if code == 429:
+            return None, 'Gemini rate limit reached (HTTP 429). Wait a minute and try again.'
+        return None, f'Gemini request failed (HTTP {code}), so meaning-based search was skipped.'
     except Exception as e:
         log.warning(f'Query embedding failed: {e}')
-        return None
+        return None, 'The Gemini request failed, so meaning-based search was skipped.'
+
+def embed_query(text: str, gemini_key: str = '') -> bytes | None:
+    return embed_query_detail(text, gemini_key)[0]
 
 # ── PDF fetching ──────────────────────────────────────────────────────────────
 _BROWSER_HEADERS = {
@@ -2699,6 +2719,7 @@ def venn_search():
             return set(valid_list), '', fts, False  # highlight exactly what was searched
 
     ads_token, gemini_key = get_request_tokens()
+    semantic_errors = set()   # plain-language reasons meaning-based search failed (shown in the dashboard)
 
     # Parse and expand each query
     expanded_queries = [expand_terms(q) for q in queries]
@@ -2736,7 +2757,9 @@ def venn_search():
 
         # ── Hybrid semantic search (USearch + sqlite-vec) ─────────────────────
         if use_semantic and not skip_semantic and USEARCH_INDEX is not None:
-            q_vec = embed_query(queries[ci], gemini_key)
+            q_vec, why = embed_query_detail(queries[ci], gemini_key)
+            if not q_vec and why:
+                semantic_errors.add(why)
             if q_vec:
                 # Unpack bytes to list, then truncate to 768 dims (MRL) and convert to numpy
                 full_vec = struct.unpack(f'{len(q_vec)//4}f', q_vec)
@@ -3079,7 +3102,77 @@ def venn_search():
         'annotation_results': annotation_results,
         'total':              total,
         'semantic_skipped':   not bool(gemini_key) or USEARCH_INDEX is None,
+        'semantic_error':     ' '.join(sorted(semantic_errors)),
     })
+
+# ── Venn Search as a background job: start it, then check back for the result ────────────────────
+# The dashboard reaches the server through Apps Script, which allows only about a minute per request,
+# while a large search can take longer on an e2-micro. So Apps Script starts the search here and then
+# asks for the result in short calls. Agreed limits (28 Oct 2026):
+#   * a search gets at most VENN_JOB_MAX_SECONDS (2 minutes); after that the dashboard is told it timed out
+#     (Python can't stop the thread, so the server may finish it in the background, and the result is dropped);
+#   * finished results are kept VENN_JOB_KEEP_SECONDS (10 minutes), then deleted;
+#   * jobs live in memory only, so a restart of BibMan loses searches that were running.
+VENN_JOB_MAX_SECONDS  = 120
+VENN_JOB_KEEP_SECONDS = 600
+_venn_jobs      = {}
+_venn_jobs_lock = threading.Lock()
+VENN_TIMEOUT_MSG = ('This search took longer than 2 minutes and was stopped. Try fewer or more specific '
+                    'search terms, or a lower Max results.')
+
+def _venn_jobs_prune(now: float):
+    for jid in [j for j, v in _venn_jobs.items()
+                if now - v['started'] > VENN_JOB_MAX_SECONDS + VENN_JOB_KEEP_SECONDS]:
+        _venn_jobs.pop(jid, None)
+
+@app.route('/api/search/venn/start', methods=['POST'])
+@gas_auth_required
+def venn_search_start():
+    data = request.get_json(silent=True) or {}
+    hdrs = {k: v for k, v in request.headers.items() if k.lower().startswith('x-')}  # credential, keys, user
+    job_id, now = uuid.uuid4().hex, time.time()
+    with _venn_jobs_lock:
+        _venn_jobs_prune(now)
+        _venn_jobs[job_id] = {'started': now, 'status': 'running', 'result': None, 'error': ''}
+
+    def run():
+        try:  # run the ordinary Venn Search route, unchanged, with the same request data
+            with app.test_request_context('/api/search/venn', method='POST', json=data, headers=hdrs):
+                resp = app.make_response(venn_search())
+            body = resp.get_json(silent=True) or {}
+            ok, error = resp.status_code == 200, body.get('error') or f'HTTP {resp.status_code}'
+        except Exception as e:
+            log.error(f'venn_search job {job_id[:8]} failed: {e}')
+            body, ok, error = None, False, 'The search failed on the server.'
+        with _venn_jobs_lock:
+            job = _venn_jobs.get(job_id)
+            if not job or job['status'] != 'running':
+                return  # timed out or pruned meanwhile: drop the result
+            if time.time() - job['started'] > VENN_JOB_MAX_SECONDS:
+                job.update(status='error', error=VENN_TIMEOUT_MSG)
+            elif ok:
+                job.update(status='done', result=body)
+            else:
+                job.update(status='error', error=error)
+            job['finished'] = time.time()
+
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({'job_id': job_id})
+
+@app.route('/api/search/venn/result/<job_id>')
+@gas_auth_required
+def venn_search_result(job_id):
+    with _venn_jobs_lock:
+        job = _venn_jobs.get(job_id)
+        if not job:
+            return jsonify({'status': 'error', 'error': 'This search is no longer available (BibMan may have '
+                                                        'restarted). Please run it again.'})
+        if job['status'] == 'running' and time.time() - job['started'] > VENN_JOB_MAX_SECONDS:
+            job.update(status='error', error=VENN_TIMEOUT_MSG, finished=time.time())
+        out = {'status': job['status'], 'error': job['error']}
+        if job['status'] == 'done':
+            out['result'] = job['result']
+    return jsonify(out)
 
 @app.route('/api/search/suggestions')
 @gas_auth_required
