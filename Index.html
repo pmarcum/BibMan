@@ -224,6 +224,8 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
   color:var(--muted);font-size:10px;font-family:var(--mono);cursor:pointer;transition:all .15s}
 .flag-btn:hover{border-color:var(--text);color:var(--text)}
 .flag-btn.active{background:rgba(126,184,247,.15);border-color:var(--accent);color:var(--accent)}
+.flag-btn.others:not(.active){border-style:dashed;border-color:var(--accent);opacity:.7}  /* marked only by others */
+.flag.others{opacity:.4}
 .pdf-viewer-grid{display:none;flex:1;overflow:hidden;grid-template-columns:110px 1fr}
 .pdf-thumbnail-strip{overflow-y:auto;overflow-x:hidden;background:#111116;
   border-right:1px solid var(--border);padding:6px 0}
@@ -1604,12 +1606,16 @@ function renderRows(papers) {
       flags.push('<span class="flag" title="Has notes">💬</span>');
     else if (p.highlight_count > 0)
       flags.push('<span class="flag" title="Has highlights">🖊️</span>');
-    if (p.key_paper || p.flag_key_point)
-      flags.push('<span class="flag" title="Key Paper">🎯</span>');
-    else if (p.pinned || p.flag_pinned)
-      flags.push('<span class="flag" title="Pinned">📌</span>');
-    else if (p.followup || p.flag_follow_up)
-      flags.push('<span class="flag" title="Follow-up">🔄</span>');
+    // Personal marks: filled if you made one (on the paper or one of its notes), faint if only others did
+    const markIcon = (paperMark, noteMark, icon, label) => {
+      if (!(p[paperMark] || p[noteMark])) return false;
+      const mine = p['my_' + paperMark] || p['my_' + noteMark];
+      flags.push(`<span class="flag${mine ? '' : ' others'}" title="${label}${mine ? '' : ' (marked by others)'}">${icon}</span>`);
+      return true;
+    };
+    markIcon('key_paper', 'flag_key_point', '🎯', 'Key Paper')
+      || markIcon('pinned', 'flag_pinned', '📌', 'Pinned')
+      || markIcon('followup', 'flag_follow_up', '🔄', 'Follow-up');
     // Tag squares — read only in library, no add button
     const tagSquares = (p.tags_data || []).map(t => {
       const initial = (t.user_id || '?')[0].toUpperCase();
@@ -1652,9 +1658,9 @@ async function selectPaper(id, hlInfo) {
     const kp = document.getElementById('pdf-flag-key-paper');
     const pi = document.getElementById('pdf-flag-pinned');
     const fu = document.getElementById('pdf-flag-followup');
-    if (kp) kp.classList.toggle('active', !!(_current.key_paper));
-    if (pi) pi.classList.toggle('active', !!(_current.pinned));
-    if (fu) fu.classList.toggle('active', !!(_current.followup));
+    _setPaperFlagButton('key_paper');
+    _setPaperFlagButton('pinned');
+    _setPaperFlagButton('followup');
     renderRows(_filtered);
     _renderAnnotations(_current.annotations || []);
     _vennHL = hlInfo || null;
@@ -1934,6 +1940,8 @@ function _renderAnnotations(anns) {
       meta.textContent = (quoteSnippet || 'passage') + ' \u00b7 p.' + page;
       meta.style.color = 'var(--muted)';
     }
+    // Someone else's note (shown in "Everyone", or in "Just me" because you marked it): say whose it is
+    if (a.username && a.username !== _currentUser) meta.textContent += ' \u00b7 by @' + a.username;
     const btns = document.createElement('div');
     btns.style.cssText = 'display:flex;gap:4px';
     const atBtn = document.createElement('button');
@@ -1951,39 +1959,42 @@ function _renderAnnotations(anns) {
     kpBtn.className = 'ann-del' + (a.flag_key_point ? ' active' : '');
     kpBtn.title = 'Key Point';
     kpBtn.textContent = '🎯';
-    kpBtn.style.opacity = a.flag_key_point ? '1' : '0.35';
+    kpBtn.style.opacity = a.flag_key_point ? '1' : (a.others_flag_key_point ? '0.6' : '0.35');
+    if (a.others_flag_key_point) kpBtn.title += ' (also marked by others; click for your own mark)';
     kpBtn.addEventListener('click', e => {
       e.stopPropagation();
       const nv = a.flag_key_point ? 0 : 1;
       gas('updateAnnotationFlags', a.id, {flag_key_point: nv}).then(() => {
         a.flag_key_point = nv;
-        kpBtn.style.opacity = nv ? '1' : '0.35';
+        kpBtn.style.opacity = nv ? '1' : (a.others_flag_key_point ? '0.6' : '0.35');
       }).catch(err => notify(err.message, 'error'));
     });
     const piBtn = document.createElement('button');
     piBtn.className = 'ann-del' + (a.flag_pinned ? ' active' : '');
     piBtn.title = 'Pinned';
     piBtn.textContent = '📌';
-    piBtn.style.opacity = a.flag_pinned ? '1' : '0.35';
+    piBtn.style.opacity = a.flag_pinned ? '1' : (a.others_flag_pinned ? '0.6' : '0.35');
+    if (a.others_flag_pinned) piBtn.title += ' (also marked by others; click for your own mark)';
     piBtn.addEventListener('click', e => {
       e.stopPropagation();
       const nv = a.flag_pinned ? 0 : 1;
       gas('updateAnnotationFlags', a.id, {flag_pinned: nv}).then(() => {
         a.flag_pinned = nv;
-        piBtn.style.opacity = nv ? '1' : '0.35';
+        piBtn.style.opacity = nv ? '1' : (a.others_flag_pinned ? '0.6' : '0.35');
       }).catch(err => notify(err.message, 'error'));
     });
     const fuBtn = document.createElement('button');
     fuBtn.className = 'ann-del' + (a.flag_follow_up ? ' active' : '');
     fuBtn.title = 'Follow-up';
     fuBtn.textContent = '🔄';
-    fuBtn.style.opacity = a.flag_follow_up ? '1' : '0.35';
+    fuBtn.style.opacity = a.flag_follow_up ? '1' : (a.others_flag_follow_up ? '0.6' : '0.35');
+    if (a.others_flag_follow_up) fuBtn.title += ' (also marked by others; click for your own mark)';
     fuBtn.addEventListener('click', e => {
       e.stopPropagation();
       const nv = a.flag_follow_up ? 0 : 1;
       gas('updateAnnotationFlags', a.id, {flag_follow_up: nv}).then(() => {
         a.flag_follow_up = nv;
-        fuBtn.style.opacity = nv ? '1' : '0.35';
+        fuBtn.style.opacity = nv ? '1' : (a.others_flag_follow_up ? '0.6' : '0.35');
       }).catch(err => notify(err.message, 'error'));
     });
     const editBtn = document.createElement('button');
@@ -3745,19 +3756,26 @@ async function loadBookmarkletLink() {
   } catch(e) { console.warn('Bookmarklet load failed:', e); }
 }
 // ── Paper View actions ────────────────────────────────────────────────────────
+// Paper View mark buttons: highlighted = your mark; dashed outline = marked only by others ("Everyone" view).
+// Clicking sets or clears YOUR mark only; other people's marks are never changed.
+function _setPaperFlagButton(flagName) {
+  const btnMap = {key_paper:'pdf-flag-key-paper', pinned:'pdf-flag-pinned', followup:'pdf-flag-followup'};
+  const btn = document.getElementById(btnMap[flagName]);
+  if (!btn || !_current) return;
+  btn.classList.toggle('active', !!_current[flagName]);
+  btn.classList.toggle('others', !!_current['others_' + flagName]);
+  btn.title = _current['others_' + flagName] ? 'Also marked by others. Click to set or clear your own mark.' : '';
+}
 async function togglePaperFlag(flagName) {
   if (!_current) return;
   const newVal = _current[flagName] ? 0 : 1;
   try {
     await gas('updatePaper', _current.id, {[flagName]: newVal});
     _current[flagName] = newVal;
-    // Update button state
-    const btnMap = {key_paper:'pdf-flag-key-paper', pinned:'pdf-flag-pinned', followup:'pdf-flag-followup'};
-    const btn = document.getElementById(btnMap[flagName]);
-    if (btn) btn.classList.toggle('active', !!newVal);
-    // Update paper in list cache
+    _setPaperFlagButton(flagName);
+    // Update paper in list cache (your mark; the paper still shows others' marks in "Everyone" view)
     const p = _papers.find(p => p.id === _current.id);
-    if (p) p[flagName] = newVal;
+    if (p) { p['my_' + flagName] = newVal; p[flagName] = (newVal || p['others_' + flagName]) ? 1 : 0; }
     updateCounts();
     renderRows(_filtered);
     notify(newVal ? `✓ ${flagName.replace('_',' ')} set` : `${flagName.replace('_',' ')} cleared`, 'success', 1500);

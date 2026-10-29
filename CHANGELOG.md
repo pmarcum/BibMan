@@ -1,5 +1,12 @@
 # Changelog
 
+## 29 October 2026: personal Key paper / Pinned / Follow-up marks
+
+- **Marks are personal, like tags.** Each person has their own Key paper, Pinned and Follow-up marks, on papers and on notes. **Just me** shows yours; **Everyone** shows everyone's, with yours filled and others' faint. Clearing your mark never touches anyone else's.
+- **Marks on notes now count for the paper.** A paper appears under Key paper / Pinned / Follow-up (list icon, counts, filters) when the paper or one of its notes carries that mark. Before, marks on notes were ignored there.
+- **Marking a colleague's note adopts it:** with **Just me** on, you see it alongside your own notes (labelled with its author), and it counts for your note icons and searches.
+- Existing marks were copied to their owner by `cloud/bibman_personal_marks.py`; the old shared columns are kept as a backup.
+
 ## 29 October 2026: much faster Venn Search
 
 - **Large Venn Searches are several times faster** (for example, "galaxy" + "hot gas": about 4 minutes before, about 1 minute after, from a cold start). The step that decides each result's "~ synonym" / "~ semantic" badge, and the exclude step, asked the database "which of these results contain this word?" in a form that made it read every passage in the library containing the word (minutes on a standard disk). They now read only the keyword index and compare in memory. Results are unchanged (checked old against new on a test library). Cost: a few tens of MB of memory during a large search.

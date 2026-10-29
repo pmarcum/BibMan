@@ -412,6 +412,26 @@ def _ensure_columns(conn):
         conn.commit()
     except Exception:
         pass  # sqlite-vec not loaded or table already exists
+    # Ensure the personal-marks tables exist (same definitions as schema.sql)
+    try:
+        conn.executescript('''
+            CREATE TABLE IF NOT EXISTS paper_flags (
+                id TEXT PRIMARY KEY, paper_id TEXT NOT NULL, username TEXT NOT NULL,
+                pinned INTEGER DEFAULT 0, key_paper INTEGER DEFAULT 0, followup INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (paper_id) REFERENCES papers(id), UNIQUE(paper_id, username));
+            CREATE INDEX IF NOT EXISTS idx_paper_flags_lookup ON paper_flags(paper_id, username);
+            CREATE INDEX IF NOT EXISTS idx_paper_flags_paper ON paper_flags(paper_id);
+            CREATE TABLE IF NOT EXISTS annotation_flags (
+                id TEXT PRIMARY KEY, annotation_id TEXT NOT NULL, username TEXT NOT NULL,
+                key_point INTEGER DEFAULT 0, pinned INTEGER DEFAULT 0, followup INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (annotation_id) REFERENCES annotations(id), UNIQUE(annotation_id, username));
+            CREATE INDEX IF NOT EXISTS idx_annotation_flags_lookup ON annotation_flags(annotation_id, username);
+            CREATE INDEX IF NOT EXISTS idx_annotation_flags_annotation ON annotation_flags(annotation_id);
+        ''')
+    except Exception as e:
+        log.warning(f'personal-marks tables check failed: {e}')
     # Ensure annotations_fts table exists
     try:
         conn.execute('''
@@ -1792,6 +1812,49 @@ def delete_library(library_id):
     return jsonify({'ok': True, 'deleted': lib_name, 'papers_removed': len(paper_ids)})
 
 # ── Papers ────────────────────────────────────────────────────────────────────
+# ── Personal marks: Key paper / Pinned / Follow-up (since 29 Oct 2026) ─────────────────────────────
+# Each person's marks are their own, like tags: paper marks live in paper_flags (one row per paper and
+# person), marks on notes and highlights in annotation_flags (one row per note and person; anyone may mark
+# any note they can see). "Just me" shows only your marks; "Everyone" shows everyone's. The old shared
+# columns (papers.key_paper/pinned/followup, annotations.flag_*) are no longer read or written; they keep
+# the state from before the switch as a backup (bibman_personal_marks.py copied it into the new tables).
+PAPER_MARKS = ('key_paper', 'pinned', 'followup')
+NOTE_MARKS  = {'flag_key_point': 'key_point', 'flag_pinned': 'pinned', 'flag_follow_up': 'followup'}
+# "Just me" shows the notes you wrote AND notes by others that you have marked: marking a colleague's note
+# adopts it (agreed 29 Oct 2026). Use as:  (a.username = ? OR a.id IN (ADOPTED_NOTES))  with the user twice.
+ADOPTED_NOTES = ('SELECT annotation_id FROM annotation_flags WHERE username = ? '
+                 'AND (key_point = 1 OR pinned = 1 OR followup = 1)')
+
+def _marks_by_paper(conn, user_id, paper_id=None):
+    """{paper_id: {'mine': {mark: 1}, 'others': {mark: 1}}} for paper marks (key_paper, pinned, followup)
+    and marks on any of the paper's notes (flag_key_point, flag_pinned, flag_follow_up)."""
+    out = {}
+    def add(pid, who, mark):
+        out.setdefault(pid, {'mine': {}, 'others': {}})['mine' if who == user_id else 'others'][mark] = 1
+    only = ' AND paper_id=?' if paper_id else ''
+    args = (paper_id,) if paper_id else ()
+    for r in conn.execute('SELECT paper_id, username, key_paper, pinned, followup FROM paper_flags '
+                          'WHERE (key_paper=1 OR pinned=1 OR followup=1)' + only, args):
+        for m in PAPER_MARKS:
+            if r[m]:
+                add(r['paper_id'], r['username'], m)
+    for r in conn.execute('SELECT a.paper_id, f.username, f.key_point, f.pinned, f.followup FROM annotation_flags f '
+                          'JOIN annotations a ON a.id = f.annotation_id '
+                          'WHERE (f.key_point=1 OR f.pinned=1 OR f.followup=1)' + only.replace('paper_id', 'a.paper_id'),
+                          args):
+        for api, col in NOTE_MARKS.items():
+            if r[col]:
+                add(r['paper_id'], r['username'], api)
+    return out
+
+def _set_marks(conn, table, key_col, key, user_id, values: dict):
+    """Set this person's marks on one paper (paper_flags) or note (annotation_flags)."""
+    conn.execute(f'INSERT INTO {table} (id, {key_col}, username) VALUES (?,?,?) '
+                 f'ON CONFLICT({key_col}, username) DO NOTHING', (str(uuid.uuid4()), key, user_id))
+    sets = ', '.join(f'{c}=?' for c in values)
+    conn.execute(f'UPDATE {table} SET {sets} WHERE {key_col}=? AND username=?',
+                 [int(bool(v)) for v in values.values()] + [key, user_id])
+
 @app.route('/api/papers')
 @gas_auth_required
 def list_papers():
@@ -1828,7 +1891,8 @@ def list_papers():
             FROM papers p WHERE p.library_id=? ORDER BY p.bibkey COLLATE NOCASE
         ''', (library_id,)).fetchall()
     else:
-        rows = conn.execute('''
+        adopted = ADOPTED_NOTES  # your notes + notes by others you have marked
+        rows = conn.execute(f'''
             SELECT p.id, p.bibkey, p.title, p.authors, p.year, p.journal,
                    p.volume, p.pages, p.pubtype, p.bibcode, p.doi,
                    p.read_status, p.pdf_extracted, p.pdf_url, p.file_id,
@@ -1836,20 +1900,30 @@ def list_papers():
                    CASE WHEN p.synonyms_generated_at IS NOT NULL THEN 1 ELSE 0 END AS embeddings_done,
                    (SELECT COUNT(*) FROM annotations a
                     WHERE a.paper_id = p.id
-                    AND a.username = ?) AS has_annotations,
+                    AND (a.username = ? OR a.id IN ({adopted}))) AS has_annotations,
                    (SELECT COUNT(*) FROM annotations a
                     WHERE a.paper_id = p.id
-                    AND a.username = ?
+                    AND (a.username = ? OR a.id IN ({adopted}))
                     AND a.user_note IS NOT NULL AND a.user_note != '') AS note_count,
                    (SELECT COUNT(*) FROM annotations a
                     WHERE a.paper_id = p.id
-                    AND a.username = ?
+                    AND (a.username = ? OR a.id IN ({adopted}))
                     AND (a.quote IS NOT NULL AND a.quote != '')
                     AND (a.user_note IS NULL OR a.user_note = '')) AS highlight_count
             FROM papers p WHERE p.library_id=? ORDER BY p.bibkey COLLATE NOCASE
-        ''', (user_id, user_id, user_id, library_id)).fetchall()
+        ''', (user_id,) * 6 + (library_id,)).fetchall()
 
     papers = rows_to_list(rows)
+
+    # Personal marks: "Just me" = yours; "Everyone" = anyone's. my_* / others_* let the list show
+    # your marks filled and marks made only by others faint.
+    marks = _marks_by_paper(conn, user_id)
+    for p in papers:
+        m = marks.get(p['id'], {})
+        mine, others = m.get('mine', {}), (m.get('others', {}) if show_all else {})
+        for f in PAPER_MARKS + tuple(NOTE_MARKS):
+            p['my_' + f], p['others_' + f] = mine.get(f, 0), others.get(f, 0)
+            p[f] = 1 if (p['my_' + f] or p['others_' + f]) else 0
 
     # Fetch tags for all papers in one query
     # Fetch all tags (paper-level and annotation-level), deduplicated by paper+user+label
@@ -1923,13 +1997,29 @@ def get_paper(paper_id):
             (paper_id,)
         ).fetchall()
     else:
-        anns = conn.execute(
-            'SELECT * FROM annotations WHERE paper_id=? AND username=? ORDER BY created_at',
-            (paper_id, user_id)
+        anns = conn.execute(   # your notes + notes by others that you have marked
+            f'SELECT * FROM annotations WHERE paper_id=? AND (username=? OR id IN ({ADOPTED_NOTES})) '
+            'ORDER BY created_at', (paper_id, user_id, user_id)
         ).fetchall()
+    m = _marks_by_paper(conn, user_id, paper_id).get(paper_id, {})
+    for f in PAPER_MARKS:   # paper-level marks only (the Paper View buttons)
+        result[f] = m.get('mine', {}).get(f, 0)
+        result['others_' + f] = m.get('others', {}).get(f, 0) if everyone else 0
+    note_marks = {}
+    for r in conn.execute('SELECT f.annotation_id, f.username, f.key_point, f.pinned, f.followup FROM annotation_flags f '
+                          'JOIN annotations a ON a.id = f.annotation_id WHERE a.paper_id=?', (paper_id,)):
+        nm = note_marks.setdefault(r['annotation_id'], {'mine': {}, 'others': {}})
+        side = nm['mine'] if r['username'] == user_id else nm['others']
+        for api, col in NOTE_MARKS.items():
+            if r[col]:
+                side[api] = 1
     ann_list = []
     for a in anns:
         d = dict(a)
+        nm = note_marks.get(d['id'], {})
+        for api in NOTE_MARKS:
+            d[api] = nm.get('mine', {}).get(api, 0)
+            d['others_' + api] = nm.get('others', {}).get(api, 0) if everyone else 0
         # Normalise text fields: old schema uses user_note, new uses text
         d['display_text'] = d.get('user_note') or d.get('text') or ''
         d['quote']        = d.get('quote') or ''
@@ -1989,10 +2079,13 @@ def update_paper(paper_id):
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return err('No valid fields')
-    sets   = ', '.join(f'{k}=?' for k in updates)
-    values = list(updates.values()) + [paper_id]
-    conn   = get_db_connection()
-    conn.execute(f'UPDATE papers SET {sets} WHERE id=?', values)
+    marks = {k: updates.pop(k) for k in PAPER_MARKS if k in updates}   # personal: paper_flags
+    conn  = get_db_connection()
+    if marks:
+        _set_marks(conn, 'paper_flags', 'paper_id', paper_id, get_user_id(), marks)
+    if updates:
+        sets   = ', '.join(f'{k}=?' for k in updates)
+        conn.execute(f'UPDATE papers SET {sets} WHERE id=?', list(updates.values()) + [paper_id])
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2012,6 +2105,9 @@ def delete_paper(paper_id):
         except Exception:
             pass
         conn.execute('DELETE FROM passages WHERE paper_id=?', (paper_id,))
+    conn.execute('DELETE FROM annotation_flags WHERE annotation_id IN (SELECT id FROM annotations WHERE paper_id=?)',
+                 (paper_id,))
+    conn.execute('DELETE FROM paper_flags WHERE paper_id=?', (paper_id,))
     conn.execute('DELETE FROM annotations WHERE paper_id=?', (paper_id,))
     conn.execute('DELETE FROM papers WHERE id=?', (paper_id,))
     conn.commit()
@@ -2569,6 +2665,7 @@ def update_annotation(ann_id):
 @gas_auth_required
 def delete_annotation(ann_id):
     conn = get_db_connection()
+    conn.execute('DELETE FROM annotation_flags WHERE annotation_id=?', (ann_id,))
     conn.execute('DELETE FROM annotations WHERE id=?', (ann_id,))
     try:
         conn.execute('DELETE FROM annotations_fts WHERE annotation_id=?', (ann_id,))
@@ -2585,18 +2682,15 @@ def delete_annotation(ann_id):
 @app.route('/api/annotations/<ann_id>/flags', methods=['PATCH'])
 @gas_auth_required
 def update_annotation_flags(ann_id):
-    data = request.json or {}
-    sets = []
-    vals = []
-    for flag in ('flag_key_point', 'flag_follow_up', 'flag_pinned'):
-        if flag in data:
-            sets.append(f'{flag}=?')
-            vals.append(int(bool(data[flag])))
-    if not sets:
+    data   = request.json or {}
+    values = {col: data[api] for api, col in NOTE_MARKS.items() if api in data}   # personal: annotation_flags
+    if not values:
         return err('No flag fields')
-    vals.append(ann_id)
     conn = get_db_connection()
-    conn.execute(f'UPDATE annotations SET {", ".join(sets)} WHERE id=?', vals)
+    if not conn.execute('SELECT 1 FROM annotations WHERE id=?', (ann_id,)).fetchone():
+        conn.close()
+        return err('Annotation not found', 404)
+    _set_marks(conn, 'annotation_flags', 'annotation_id', ann_id, get_user_id(), values)
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2828,7 +2922,7 @@ def venn_search():
                     AND a.user_note IS NOT NULL AND a.user_note != ''
                 ''', (fts, library_id)).fetchall()
             else:
-                ann_rows = conn.execute('''
+                ann_rows = conn.execute(f'''
                     SELECT a.id, a.paper_id, a.passage_id, a.user_note,
                            a.coords, a.username,
                            pp.bibkey, pp.year, pp.title, pp.authors, pp.journal
@@ -2836,9 +2930,9 @@ def venn_search():
                     JOIN annotations a ON a.id = af.annotation_id
                     JOIN papers pp ON pp.id = a.paper_id
                     WHERE annotations_fts MATCH ? AND pp.library_id=?
-                    AND a.username = ?
+                    AND (a.username = ? OR a.id IN ({ADOPTED_NOTES}))
                     AND a.user_note IS NOT NULL AND a.user_note != ''
-                ''', (fts, library_id, current_user)).fetchall()
+                ''', (fts, library_id, current_user, current_user)).fetchall()
             for row in ann_rows:
                 ann_id = row['id']
                 ann_circle_map[ann_id].add(ci)
@@ -2995,10 +3089,10 @@ def venn_search():
             JOIN papers pp ON pp.id = pa.paper_id
             LEFT JOIN annotations a ON a.passage_id = pa.id
                 AND a.user_note IS NOT NULL AND a.user_note != ''
-                AND (? OR a.username = ?)
+                AND (? OR a.username = ? OR a.id IN ({ADOPTED_NOTES}))
             WHERE pa.id IN ({ph})
             ORDER BY pp.bibkey, pa.page_number
-        ''', [1 if everyone else 0, current_user] + passage_ids_to_fetch).fetchall()
+        ''', [1 if everyone else 0, current_user, current_user] + passage_ids_to_fetch).fetchall()
 
         # Labeling uses pre-computed exact_pids_by_circle and synonym_pids_by_circle
 
@@ -3765,13 +3859,13 @@ def get_my_annotated_papers():
     user_id = get_user_id()
     conn    = get_db_connection()
     library_id, _ = get_current_library_id(conn)
-    rows = conn.execute('''
+    rows = conn.execute(f'''
         SELECT DISTINCT pp.id, pp.bibkey, pp.title, pp.authors, pp.year
         FROM annotations a
         JOIN papers pp ON pp.id = a.paper_id
-        WHERE pp.library_id=? AND a.username=?
+        WHERE pp.library_id=? AND (a.username=? OR a.id IN ({ADOPTED_NOTES}))
         ORDER BY pp.bibkey
-    ''', (library_id, user_id)).fetchall()
+    ''', (library_id, user_id, user_id)).fetchall()
     conn.close()
     return jsonify(rows_to_list(rows))
 

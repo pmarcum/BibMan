@@ -53,6 +53,14 @@ A request through Apps Script must finish within about a minute, but a large Ven
 - A restart of BibMan loses searches that were running; run them again.
 - The dashboard itself gives up after 3 minutes without an answer (only if the server stops responding).
 
+## Personal marks (Key paper, Pinned, Follow-up)
+
+Since 29 October 2026 these marks are personal, like tags. Each person's marks on a paper are a row in `paper_flags` (paper + person), and marks on a note or highlight are a row in `annotation_flags` (note + person). Anyone may mark any note they can see, and their mark is their own.
+- **Just me** shows only your marks; **Everyone** shows everyone's. In Everyone view, your marks look filled, and marks made only by others look faint (in the paper list) or have a dashed outline (Paper View buttons). Clicking always sets or clears **your** mark; other people's are never changed.
+- A paper counts as Key paper / Pinned / Follow-up in the paper list, its counts and the filters if the paper **or one of its notes** carries that mark.
+- **Marking someone else's note adopts it.** In **Just me** you see the notes you wrote **and** notes by others that you have marked (any of the three marks): in Paper View (labelled "by @author"), in the paper list's note icon and counts, in Venn Search and in your annotated papers. Clearing your last mark on it un-adopts it.
+- The old shared columns (`papers.key_paper`, `pinned`, `followup`; `annotations.flag_key_point`, `flag_pinned`, `flag_follow_up`) are no longer read or written. They keep the state from before the switch as a backup. `cloud/bibman_personal_marks.py` copied that state into the new tables (dry run by default, `--apply` to write, `--user` names who receives the existing paper marks).
+
 ## Gemini billing (Prepay)
 
 Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). Venn Search then falls back to keyword-only results and (since 28 October 2026) shows a red warning saying why, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.
