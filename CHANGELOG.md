@@ -3,7 +3,7 @@
 ## 29 October 2026: dashboard test pages
 
 - **Try a new dashboard page before it goes live:** `?branch=NAME` on the dashboard address loads `Index.html` from that branch; the normal address keeps loading `main` (Core 6, Frontend 9, Capture 5).
-- The new personal-marks display (yours filled, others' faint; "by @name" on other people's notes) is held back for now: as first written it stopped the dashboard from loading through Google's page delivery, so the previous page was restored. Personal marks themselves work (the server handles them).
+- **Personal-marks display is live:** your marks filled, others' faint; dashed Paper View buttons for marks made only by others; "by @name" on other people's notes. As first written, this page stopped the dashboard from loading through Google's page delivery (even a single extra comment line in the paper-list code was enough); it was narrowed down with test pages and shipped once the exact page loaded.
 
 ## 29 October 2026: personal Key paper / Pinned / Follow-up marks
 
