@@ -3006,7 +3006,7 @@ def venn_search():
 
     all_passage_ids = set(passage_circle_map.keys())
 
-    if not all_passage_ids:
+    if not all_passage_ids and not annotation_results:   # (matches only in notes still count, 29 Oct 2026)
         conn.close()
         return jsonify({'upset_data': [], 'merged_results': [], 'papers_list': [],
                         'strict_passages': [], 'paper_results': [], 'highlight_terms': highlight_terms,

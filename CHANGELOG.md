@@ -6,6 +6,7 @@
 - **Marks on notes now count for the paper.** A paper appears under Key paper / Pinned / Follow-up (list icon, counts, filters) when the paper or one of its notes carries that mark. Before, marks on notes were ignored there.
 - **Marking a colleague's note adopts it:** with **Just me** on, you see it alongside your own notes (labelled with its author), and it counts for your note icons and searches.
 - Existing marks were copied to their owner by `cloud/bibman_personal_marks.py`; the old shared columns are kept as a backup.
+- **Venn Search finds words that appear only in notes.** A search whose words matched notes but no paper text used to return nothing.
 
 ## 29 October 2026: much faster Venn Search
 
