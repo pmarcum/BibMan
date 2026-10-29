@@ -2617,7 +2617,7 @@ def venn_search():
     if not queries:
         return err('queries required')
 
-    conn = get_db_connection()
+    conn = _venn_job_conn(get_db_connection())  # stoppable when run as a background job
     # Prefer explicit library from client; fall back to server CONFIG
     explicit_lib = data.get('library', '').strip()
     if explicit_lib:
@@ -2654,6 +2654,24 @@ def venn_search():
         (Full-text search drops punctuation, so 'C+' becomes 'c' and would match every lone 'c'.)"""
         toks = re.findall(r'[a-z0-9]+', t.lower())
         return len(toks) > 1 or (len(toks) == 1 and len(toks[0]) >= 3)
+
+    _match_cache = {}
+    def _fts_match_ids(pids, match):
+        """Of the passages `pids`, those whose text matches the keyword expression `match`.
+        Same answer as joining passages to passages_fts with `pa.id IN (...) AND MATCH ?`, but done as two
+        small lookups (passage IDs -> row numbers through the ID index; the match set from the keyword index
+        alone) intersected in Python. On the real database SQLite chose to read every matching passage row
+        for that join (182-227 s for one circle on a standard disk); this takes a second or two."""
+        pids = list(pids)
+        if not pids or not match:
+            return set()
+        rowid_of = dict(conn.execute(
+            f'SELECT id, rowid FROM passages WHERE id IN ({",".join("?" * len(pids))})', pids).fetchall())
+        if match not in _match_cache:
+            _match_cache[match] = {r[0] for r in conn.execute(
+                'SELECT rowid FROM passages_fts WHERE passages_fts MATCH ?', (match,))}
+        hits = _match_cache[match]
+        return {pid for pid, rid in rowid_of.items() if rid in hits}
 
     def expand_terms(q):
         """Return (include_terms_set, exclude_term, fts_query_string, skip_semantic).
@@ -2885,12 +2903,7 @@ def venn_search():
             if not term_norm:
                 continue
             try:
-                rows = conn.execute(f'''
-                    SELECT pa.id FROM passages pa
-                    JOIN passages_fts ON passages_fts.rowid = pa.rowid
-                    WHERE pa.id IN ({ph}) AND passages_fts MATCH ?
-                ''', pids + [term_norm]).fetchall()
-                exclude_pids.update(r['id'] for r in rows)
+                exclude_pids.update(_fts_match_ids(pids, term_norm))
             except Exception:
                 pass
         for pid in exclude_pids:
@@ -2908,20 +2921,21 @@ def venn_search():
     # Build upset_data (one entry per passage, with circle membership)
     upset_data = []
     if all_passage_ids:
-        ph    = ','.join('?' * len(all_passage_ids))
-        rows  = conn.execute(f'''
-            SELECT pa.id, pp.id AS paper_id, pp.bibkey, pp.year
-            FROM passages pa
-            JOIN papers pp ON pp.id = pa.paper_id
-            WHERE pa.id IN ({ph})
-        ''', list(all_passage_ids)).fetchall()
-        for row in rows:
+        # Each passage's paper is already known from the searches above, so only the small papers table is
+        # read here (reading thousands of passage rows again took ~17 s on a cold standard disk).
+        paper_ids = sorted({passage_to_paper[pid] for pid in all_passage_ids})
+        pinfo = {r['id']: r for r in conn.execute(
+            f'SELECT id, bibkey, year FROM papers WHERE id IN ({",".join("?" * len(paper_ids))})', paper_ids)}
+        for pid in all_passage_ids:
+            pp = pinfo.get(passage_to_paper[pid])
+            if pp is None:
+                continue
             upset_data.append({
-                'id':       row['id'],
-                'paper_id': row['paper_id'],
-                'bibkey':   row['bibkey'],
-                'year':     row['year'],
-                'circles':  sorted(passage_circle_map.get(row['id'], [])),
+                'id':       pid,
+                'paper_id': pp['id'],
+                'bibkey':   pp['bibkey'],
+                'year':     pp['year'],
+                'circles':  sorted(passage_circle_map.get(pid, [])),
             })
 
     # Group passages by paper and find best intersection signature
@@ -2963,18 +2977,8 @@ def venn_search():
             exact_pids_by_circle[ci] = set()
 
             if orig_fts:
-                exact_rows = conn.execute(f'''
-                    SELECT pa.id FROM passages pa
-                    JOIN passages_fts ON passages_fts.rowid = pa.rowid
-                    WHERE pa.id IN ({ph2}) AND passages_fts MATCH ?
-                ''', list(passage_ids_to_fetch) + [orig_fts]).fetchall()
-                exact_pids_by_circle[ci] = {r['id'] for r in exact_rows}
-            fts_rows = conn.execute(f'''
-                SELECT pa.id FROM passages pa
-                JOIN passages_fts ON passages_fts.rowid = pa.rowid
-                WHERE pa.id IN ({ph2}) AND passages_fts MATCH ?
-            ''', list(passage_ids_to_fetch) + [fts]).fetchall()
-            synonym_pids_by_circle[ci] = {r['id'] for r in fts_rows} - exact_pids_by_circle[ci]
+                exact_pids_by_circle[ci] = _fts_match_ids(passage_ids_to_fetch, orig_fts)
+            synonym_pids_by_circle[ci] = _fts_match_ids(passage_ids_to_fetch, fts) - exact_pids_by_circle[ci]
 
     # Fetch passage details
     strict_results = []
@@ -3109,16 +3113,51 @@ def venn_search():
 # The dashboard reaches the server through Apps Script, which allows only about a minute per request,
 # while a large search can take longer on an e2-micro. So Apps Script starts the search here and then
 # asks for the result in short calls. Agreed limits (28 Oct 2026):
-#   * a search gets at most VENN_JOB_MAX_SECONDS (2 minutes); after that the dashboard is told it timed out
-#     (Python can't stop the thread, so the server may finish it in the background, and the result is dropped);
+#   * a search gets at most VENN_JOB_MAX_SECONDS (2 minutes); then it is stopped and reported as timed out;
+#   * Cancel in the dashboard stops it too (stopping takes effect at the next database step);
 #   * finished results are kept VENN_JOB_KEEP_SECONDS (10 minutes), then deleted;
 #   * jobs live in memory only, so a restart of BibMan loses searches that were running.
 VENN_JOB_MAX_SECONDS  = 120
 VENN_JOB_KEEP_SECONDS = 600
 _venn_jobs      = {}
 _venn_jobs_lock = threading.Lock()
+_venn_tls       = threading.local()   # the job (if any) that the current thread is running
 VENN_TIMEOUT_MSG = ('This search took longer than 2 minutes and was stopped. Try fewer or more specific '
                     'search terms, or a lower Max results.')
+VENN_CANCEL_MSG  = 'Search cancelled.'
+
+class _StoppableConn:
+    """Wraps a database connection so a stopped job's next query fails at once (and the running one is
+    interrupted by _venn_job_stop), instead of the search carrying on in the background."""
+    def __init__(self, conn, stop):
+        self._conn, self._stop = conn, stop
+    def execute(self, *a, **k):
+        if self._stop.is_set():
+            raise sqlite3.OperationalError('search stopped')
+        return self._conn.execute(*a, **k)
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+def _venn_job_conn(conn):
+    """Called by venn_search with its new connection: makes it stoppable when running as a job."""
+    job = getattr(_venn_tls, 'job', None)
+    if job is None:
+        return conn
+    job['conn'] = conn
+    return _StoppableConn(conn, job['stop'])
+
+def _venn_job_stop(job, message):
+    """Stop a running job (caller holds _venn_jobs_lock)."""
+    if job['status'] != 'running':
+        return
+    job['stop'].set()
+    c = job.get('conn')
+    if c is not None:
+        try:
+            c.interrupt()   # aborts the query in progress; safe to call from another thread
+        except Exception:
+            pass
+    job.update(status='error', error=message, finished=time.time())
 
 def _venn_jobs_prune(now: float):
     for jid in [j for j, v in _venn_jobs.items()
@@ -3131,32 +3170,45 @@ def venn_search_start():
     data = request.get_json(silent=True) or {}
     hdrs = {k: v for k, v in request.headers.items() if k.lower().startswith('x-')}  # credential, keys, user
     job_id, now = uuid.uuid4().hex, time.time()
+    job = {'started': now, 'status': 'running', 'result': None, 'error': '', 'stop': threading.Event()}
     with _venn_jobs_lock:
         _venn_jobs_prune(now)
-        _venn_jobs[job_id] = {'started': now, 'status': 'running', 'result': None, 'error': ''}
+        _venn_jobs[job_id] = job
 
     def run():
+        _venn_tls.job = job
         try:  # run the ordinary Venn Search route, unchanged, with the same request data
             with app.test_request_context('/api/search/venn', method='POST', json=data, headers=hdrs):
                 resp = app.make_response(venn_search())
             body = resp.get_json(silent=True) or {}
             ok, error = resp.status_code == 200, body.get('error') or f'HTTP {resp.status_code}'
         except Exception as e:
-            log.error(f'venn_search job {job_id[:8]} failed: {e}')
+            if not job['stop'].is_set():
+                log.error(f'venn_search job {job_id[:8]} failed: {e}')
             body, ok, error = None, False, 'The search failed on the server.'
+        finally:
+            _venn_tls.job = None
+            job['timer'].cancel()
+            c = job.get('conn')
+            if c is not None:
+                try:
+                    c.close()   # venn_search normally closes it; this covers a search that stopped part-way
+                except Exception:
+                    pass
         with _venn_jobs_lock:
-            job = _venn_jobs.get(job_id)
-            if not job or job['status'] != 'running':
-                return  # timed out or pruned meanwhile: drop the result
-            if time.time() - job['started'] > VENN_JOB_MAX_SECONDS:
-                job.update(status='error', error=VENN_TIMEOUT_MSG)
-            elif ok:
-                job.update(status='done', result=body)
-            else:
-                job.update(status='error', error=error)
+            if job['status'] != 'running':
+                log.info(f'venn_search job {job_id[:8]} stopped: {job["error"]}')
+                return  # stopped (timeout or cancel) or pruned meanwhile: drop the result
+            job.update(status='done', result=body) if ok else job.update(status='error', error=error)
             job['finished'] = time.time()
 
-    threading.Thread(target=run, daemon=True).start()
+    def watchdog():
+        with _venn_jobs_lock:
+            _venn_job_stop(job, VENN_TIMEOUT_MSG)
+    job['timer'] = threading.Timer(VENN_JOB_MAX_SECONDS, watchdog)
+    job['timer'].daemon = True
+    job['timer'].start()
+    threading.Thread(target=run, daemon=True, name=f'venn-{job_id[:8]}').start()
     return jsonify({'job_id': job_id})
 
 @app.route('/api/search/venn/result/<job_id>')
@@ -3168,11 +3220,20 @@ def venn_search_result(job_id):
             return jsonify({'status': 'error', 'error': 'This search is no longer available (BibMan may have '
                                                         'restarted). Please run it again.'})
         if job['status'] == 'running' and time.time() - job['started'] > VENN_JOB_MAX_SECONDS:
-            job.update(status='error', error=VENN_TIMEOUT_MSG, finished=time.time())
+            _venn_job_stop(job, VENN_TIMEOUT_MSG)
         out = {'status': job['status'], 'error': job['error']}
         if job['status'] == 'done':
             out['result'] = job['result']
     return jsonify(out)
+
+@app.route('/api/search/venn/cancel/<job_id>', methods=['POST'])
+@gas_auth_required
+def venn_search_cancel(job_id):
+    with _venn_jobs_lock:
+        job = _venn_jobs.get(job_id)
+        if job:
+            _venn_job_stop(job, VENN_CANCEL_MSG)
+    return jsonify({'ok': True})
 
 @app.route('/api/search/suggestions')
 @gas_auth_required

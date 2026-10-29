@@ -287,6 +287,7 @@ function dispatch(config, fn, ...args) {
     // Search
     vennSearch:            (queries, globalExcludes, library) => vennSearch(config, queries, globalExcludes, library),
     vennSearchResult:      (jobId) => vennSearchResult(config, jobId),
+    vennSearchCancel:      (jobId) => vennSearchCancel(config, jobId),
     searchSuggestions:     (q) => searchSuggestions(config, q),
     // Annotations
     createAnnotation:      (data) => createAnnotation(config, data),
@@ -1059,11 +1060,12 @@ function importBib(config, bibContent, library) { return apiCall(config, 'POST',
  *
  * Since Core 4 the dashboard passes an options object. A large search can take longer than the ~1 minute
  * Apps Script allows per request, so the server runs it as a background job: this call starts it and waits
- * up to VENN_WAIT_MS for the result. If it isn't ready, it returns { pending: true, job_id }, and the
- * dashboard calls vennSearchResult(job_id) until it is. The server gives up after 2 minutes.
- * The older (queries, globalExcludes, library) form is still accepted and runs as a single request.
+ * up to VENN_FIRST_WAIT_MS for the result (enough for most searches). If it isn't ready, it returns
+ * { pending: true, job_id }, and the dashboard calls vennSearchResult(job_id), which waits up to
+ * VENN_WAIT_MS each time, until it is; vennSearchCancel(job_id) stops it. The server stops a search
+ * after 2 minutes. The older (queries, globalExcludes, library) form still runs as a single request.
  */
-const VENN_WAIT_MS = 40000, VENN_POLL_MS = 1500;
+const VENN_FIRST_WAIT_MS = 5000, VENN_WAIT_MS = 40000, VENN_POLL_MS = 1500;
 function vennSearch(config, queriesOrOpts, globalExcludes, library) {
   if (Array.isArray(queriesOrOpts)) {
     return apiCall(config, 'POST', '/api/search/venn', {
@@ -1076,10 +1078,10 @@ function vennSearch(config, queriesOrOpts, globalExcludes, library) {
     .forEach(k => { if (o[k] !== undefined) body[k] = o[k]; });
   const started = apiCall(config, 'POST', '/api/search/venn/start', body);
   if (!started || !started.job_id) throw new Error('The server did not start the search.');
-  return vennSearchResult(config, started.job_id);
+  return vennSearchResult(config, started.job_id, VENN_FIRST_WAIT_MS);
 }
-function vennSearchResult(config, jobId) {
-  const until = Date.now() + VENN_WAIT_MS;
+function vennSearchResult(config, jobId, waitMs) {
+  const until = Date.now() + (waitMs || VENN_WAIT_MS);
   while (true) {
     const r = apiCall(config, 'GET', '/api/search/venn/result/' + encodeURIComponent(jobId));
     if (r.status === 'done')  return r.result;
@@ -1087,6 +1089,9 @@ function vennSearchResult(config, jobId) {
     if (Date.now() + VENN_POLL_MS > until) return { pending: true, job_id: jobId };
     Utilities.sleep(VENN_POLL_MS);
   }
+}
+function vennSearchCancel(config, jobId) {
+  return apiCall(config, 'POST', '/api/search/venn/cancel/' + encodeURIComponent(jobId));
 }
 function searchSuggestions(config, q) { return apiCall(config, 'GET', '/api/search/suggestions', null, { q }); }
 // Annotations

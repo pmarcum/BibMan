@@ -1,5 +1,11 @@
 # Changelog
 
+## 29 October 2026: much faster Venn Search
+
+- **Large Venn Searches are several times faster** (for example, "galaxy" + "hot gas": about 4 minutes before, about 1 minute after, from a cold start). The step that decides each result's "~ synonym" / "~ semantic" badge, and the exclude step, asked the database "which of these results contain this word?" in a form that made it read every passage in the library containing the word (minutes on a standard disk). They now read only the keyword index and compare in memory. Results are unchanged (checked old against new on a test library). Cost: a few tens of MB of memory during a large search.
+- **Timed-out and cancelled searches stop on the server** instead of running on in the background (Core 5).
+- Versions: Core library 5, Frontend web app 8, Capture web app 4.
+
 ## 28 October 2026: Venn Search through Apps Script
 
 - **Venn Search works from networks that block the server's address.** Some workplace and campus networks block dynamic-DNS names such as `*.duckdns.org`, so the dashboard's one direct browser-to-server request, Venn Search, failed there with "Failed to fetch". It now goes through Apps Script like every other dashboard action (Core 4). Because Apps Script allows only about a minute per request and large searches can take longer, the server runs each search as a background job and the dashboard checks back for the result ("Still searching"). Limit: 2 minutes per search.

@@ -45,8 +45,10 @@ To check the nightly trigger: open the Frontend project → **Triggers** (clock 
 
 Every dashboard action, including Venn Search (since Core 4), goes from the browser to Apps Script, and Apps Script calls the VM server-to-server. Browsers never connect to the VM's address directly. This matters because many workplace and campus networks block dynamic-DNS names such as `*.duckdns.org` (their DNS sends the name to a dead-end address), which breaks any feature that needs a direct browser connection. The exceptions are PDF display: Drive copies are fetched by the browser from Google Drive, and arXiv PDFs through the Cloudflare Worker.
 
-A request through Apps Script must finish within about a minute, but a large Venn Search can take longer on an e2-micro. So Venn Search runs as a background job on the server (`/api/search/venn/start`, then `/api/search/venn/result/<id>`): Apps Script starts it and waits up to 40 seconds; if it isn't finished, the dashboard shows "Still searching" and keeps asking. Agreed limits:
-- **2 minutes per search** (`VENN_JOB_MAX_SECONDS` in the server). After that the dashboard reports a timeout; the server may finish the work in the background, but the result is dropped. If searches time out, try fewer or more specific terms, or a lower **Max results**.
+A request through Apps Script must finish within about a minute, but a large Venn Search can take longer on an e2-micro. So Venn Search runs as a background job on the server (`/api/search/venn/start`, then `/api/search/venn/result/<id>`): Apps Script starts it and waits up to 5 seconds; if it isn't finished, the dashboard shows "Still searching" and keeps asking, up to 40 seconds per request. Agreed limits:
+- **2 minutes per search** (`VENN_JOB_MAX_SECONDS` in the server). After that the search is stopped on the server (its database work is interrupted) and the dashboard reports a timeout. If searches time out, try fewer or more specific terms, or a lower **Max results**.
+- **Cancel** stops the search on the server too, once it has been running for about 5 seconds (before that, the 2-minute stop applies).
+- The "2 minutes" wording appears in the dashboard (`Index.html`) and in the server's timeout message; change them together with `VENN_JOB_MAX_SECONDS`.
 - Finished results are kept in the server's memory for 10 minutes (`VENN_JOB_KEEP_SECONDS`), then deleted.
 - A restart of BibMan loses searches that were running; run them again.
 - The dashboard itself gives up after 3 minutes without an answer (only if the server stops responding).
@@ -137,7 +139,7 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 
 **Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's Script Property equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the property records which release they installed (copied from `version.json` at the time), which need not equal their own deployment count.
 
-Current versions (28 October 2026): Core library **4** (Venn Search through Apps Script; no Gemini key in the browser), Frontend web app **7**, Capture web app **3**. Both web apps select Core version **4** under **Libraries**.
+Current versions (29 October 2026): Core library **5** (Venn Search through Apps Script, cancellable; no Gemini key or server address in the browser), Frontend web app **8**, Capture web app **4**. Both web apps select Core version **5** under **Libraries**.
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project, and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).

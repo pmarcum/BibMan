@@ -2856,8 +2856,12 @@ function toggleVennFilter(filterType) {
   if (lastSearchData) renderResultsList(_currentFilteredData || lastSearchData);
 }
 let _vennAborted = false;
+let _vennJobId = null;   // server job of a search still running (see the loop in runVennSearch)
+let _vennRun = 0;        // increases with every search, so a cancelled one can't overwrite a newer one
 function cancelVennSearch() {
   _vennAborted = true;
+  _vennRun++;
+  if (_vennJobId) { gas('vennSearchCancel', _vennJobId).catch(() => {}); _vennJobId = null; }
   document.getElementById('btn-venn-search').disabled = false;
   document.getElementById('btn-venn-cancel').style.display = 'none';
   document.getElementById('upset-pane').innerHTML = '<div class="upset-empty">Search cancelled</div>';
@@ -2877,6 +2881,8 @@ async function runVennSearch() {
   if (!queries.length) { notify('Enter at least one search phrase', 'error'); return; }
   lastDisplayLabels = queries.map(q => parseQuery(q).displayLabel);
   _vennAborted = false;
+  if (_vennJobId) { gas('vennSearchCancel', _vennJobId).catch(() => {}); _vennJobId = null; }
+  const myRun = ++_vennRun;
   _activeVennFilters.clear();
   _currentFilteredData = null; 
   document.querySelectorAll('.venn-filter-btn').forEach(b => b.classList.remove('active'));
@@ -2894,8 +2900,8 @@ async function runVennSearch() {
   try {
     // Sent through Apps Script (server-to-server), so networks that block the server's domain still work
     // and the Gemini key never reaches the browser. The server runs the search as a background job: if it
-    // isn't finished within about 40 s, Apps Script returns {pending, job_id} and we keep asking for the
-    // result. The server stops a search after 2 minutes.
+    // isn't finished within a few seconds, Apps Script returns {pending, job_id} and we keep asking for the
+    // result (Cancel stops the job). The server stops a search after 2 minutes.
     let data = await gas('vennSearch', {
       queries,
       global_excludes: globalExcludes||[],
@@ -2908,14 +2914,16 @@ async function runVennSearch() {
     });
     const _vennT0 = Date.now();
     while (data && data.pending) {
-      if (_vennAborted) return;
+      if (_vennAborted || myRun !== _vennRun) return;
+      _vennJobId = data.job_id;
       document.getElementById('upset-pane').innerHTML =
         `<div class="upset-empty"><span class="spinner"></span>&nbsp; Still searching: ${queryList}`
         + `<br><span style="color:var(--muted);font-size:11px">Large searches can take up to 2 minutes.</span></div>`;
       if (Date.now() - _vennT0 > 180000) throw new Error('No answer from the server after 3 minutes. Please try again.');
       data = await gas('vennSearchResult', data.job_id);
     }
-    if (_vennAborted) return;
+    if (myRun === _vennRun) _vennJobId = null;
+    if (_vennAborted || myRun !== _vennRun) return;
     lastSearchData = data;
     if (data.semantic_error) {
       notify('Meaning-based search unavailable: ' + data.semantic_error + ' Showing keyword results only.', 'error', 15000);
@@ -2927,12 +2935,15 @@ async function runVennSearch() {
     _vennResultMode = 'passages';
     buildUpsetPlot(data.upset_data || [], queries, data);
   } catch(e) {
-    if (_vennAborted) return;
+    if (myRun === _vennRun) _vennJobId = null;
+    if (_vennAborted || myRun !== _vennRun) return;
     document.getElementById('upset-pane').innerHTML =
       `<div class="upset-empty" style="color:var(--red)">Search failed: ${esc(e.message)}</div>`;
   } finally {
-    searchBtn.disabled = false;
-    cancelBtn.style.display = 'none';
+    if (myRun === _vennRun) {
+      searchBtn.disabled = false;
+      cancelBtn.style.display = 'none';
+    }
   }
 }
 function showVennTip(el) {
