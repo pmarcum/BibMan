@@ -5,6 +5,7 @@
 - **Tag labels are shared by default.** Every label appears for everyone (sidebar, tag picker, Venn filters), with Just me on or off, and anyone can use it, so a group can tag papers and notes with one label (for example, a project name). Who tagged what stays personal: **Just me** filters by your own tagging, **Everyone** by anyone's, and removing a tag removes only yours.
 - **Private labels** (tick *Private (only you)* when creating, or switch later with 👥 / 🔒): only you see and use them, in every view. Notes tagged with them stay visible as usual; only the tag is hidden.
 - Only a label's creator can rename, recolor, delete or switch it. Deleting it, or making it private, is refused once others have used it. Duplicate names are refused (capitals ignored). The limit stays at 8 labels per person.
+- **Creating a label from a 🏷 button also applies it** to that note or paper. Before, it only created the label, and the picker then reopened for the whole paper.
 - Existing labels became shared.
 - Versions: Core library 7, Frontend web app 10, Capture web app 6.
 

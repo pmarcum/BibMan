@@ -3443,12 +3443,14 @@ async function _createTagLabel() {
   if (!label) return;
   try {
     const isPrivate = !!document.getElementById('tag-new-private')?.checked;
-    await gas('createTagLabel', label, _tagNewColor, isPrivate);
+    const made = await gas('createTagLabel', label, _tagNewColor, isPrivate);
     _tagLabels = null;
-    notify(`✓ ${isPrivate ? 'Private' : 'Shared'} label "${label}" created`, 'success');
-    if (_tagActivePaper) openTagPopover(_tagActivePaper,
-      document.querySelector(`.tags-cell span[onclick*="${_tagActivePaper}"]`) ||
-      document.body);
+    const target = _tagActiveAnnotation ? 'this note' : 'this paper';
+    if (_tagActivePaper && made && made.id) await gas('addPaperTag', _tagActivePaper, made.id, _tagActiveAnnotation);
+    notify(`✓ ${isPrivate ? 'Private' : 'Shared'} label "${label}" created and added to ${target}`, 'success');
+    if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
+    await loadPapers();
+    if (_currentPanel === 'paper') renderPaperViewTags();
     renderSidebarTagFilter();
   } catch(e) { notify(e.message, 'error'); }
 }
