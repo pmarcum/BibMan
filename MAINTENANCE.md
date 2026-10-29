@@ -61,6 +61,17 @@ Since 29 October 2026 these marks are personal, like tags. Each person's marks o
 - **Marking someone else's note adopts it.** In **Just me** you see the notes you wrote **and** notes by others that you have marked (any of the three marks): in Paper View (labelled "by @author"), in the paper list's note icon and counts, in Venn Search and in your annotated papers. Clearing your last mark on it un-adopts it.
 - The old shared columns (`papers.key_paper`, `pinned`, `followup`; `annotations.flag_key_point`, `flag_pinned`, `flag_follow_up`) are no longer read or written. They keep the state from before the switch as a backup. `cloud/bibman_personal_marks.py` copied that state into the new tables (dry run by default, `--apply` to write, `--user` names who receives the existing paper marks).
 
+## Tags: shared and private labels
+
+Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default. Who tagged what stays personal (`paper_tags` records the person).
+- **A shared label** appears for everyone (sidebar, tag picker, Venn filters), whether Just me is on or off, and anyone can apply it to papers and notes. **Just me** filters by your own tagging; **Everyone** by anyone's. Removing a tag removes only yours.
+- **A private label** (`is_private = 1`, 🔒) is seen and applied only by its creator, in every view including Everyone. Notes tagged with it stay visible to others as usual; only the tag is hidden. Private means hidden in BibMan's screens: a server administrator can still read it in the database.
+- New labels are shared unless *Private (only you)* is ticked. The creator can switch a label later (👥 / 🔒 in the tag picker). Making it private is refused if others have used it.
+- Only the creator can rename, recolor or delete a label. Deleting is refused if others have used it (the message names who, and on how many papers).
+- At most 8 labels per person (shared and private together). A new or renamed label may not have the same name, ignoring capitals, as a label you can already see. A colleague can still create a shared label with the same name as your private one, since they can't see it.
+- Labels are not tied to a library: a label shows in every library.
+- Labels that existed before the change became shared (the `is_private` column is added at server start, defaulting to 0).
+
 ## Gemini billing (Prepay)
 
 Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). Venn Search then falls back to keyword-only results and (since 28 October 2026) shows a red warning saying why, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.

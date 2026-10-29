@@ -221,6 +221,7 @@ CREATE TABLE user_tag_labels (
                 label      TEXT NOT NULL,
                 color      TEXT NOT NULL DEFAULT '#f59e0b',
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                is_private INTEGER NOT NULL DEFAULT 0,
                 UNIQUE(user_id, label)
             );
 

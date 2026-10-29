@@ -3364,7 +3364,7 @@ let _tagActiveAnnotation = null;
 let _tagNewColor    = TAG_COLORS[0];
 async function getTagLabelsCache(force) {
   if (!_tagLabels || force) {
-    try { _tagLabels = await gas('getTagLabels', !_showMyAnnotationsOnly); }
+    try { _tagLabels = await gas('getTagLabels', true); }
     catch(e) { _tagLabels = []; }
   }
   return _tagLabels;
@@ -3373,7 +3373,7 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
   if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
   _tagActivePaper = paperId;
   _tagActiveAnnotation = annotationId || null;
-  const myLabels = (await getTagLabelsCache()).filter(l => l.user_id === _currentUser);
+  const myLabels = await getTagLabelsCache();
   // Get current tags for this paper/annotation
   let paperTags = [];
   try { paperTags = await gas('getPaperTags', paperId, false); } catch(e) {}
@@ -3390,11 +3390,15 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
     ${myLabels.length ? myLabels.map(l => `
       <div class="tag-label-row" onclick="_togglePaperTag('${paperId}','${l.id}',${appliedIds.has(l.id)},this)">
         <span class="tag-sq" style="background:${l.color}">${appliedIds.has(l.id)?'✓':''}</span>
-        <span style="font-size:11px;flex:1">${esc(l.label)}</span>
+        <span style="font-size:11px;flex:1">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>
+        ${l.user_id === _currentUser ? `<span style="font-size:10px;color:var(--muted);cursor:pointer"
+          title="${l.is_private ? 'Private: only you see this label. Click to share it with everyone.' : 'Shared with everyone. Click to make it private.'}"
+          onclick="event.stopPropagation();_toggleTagPrivate('${l.id}','${esc(l.label)}',${l.is_private ? 'false' : 'true'})">${l.is_private ? '🔒' : '👥'}</span>
         <span style="font-size:10px;color:var(--muted);cursor:pointer"
           onclick="event.stopPropagation();_editTagLabel('${l.id}','${esc(l.label)}','${l.color}')">✎</span>
         <span style="font-size:10px;color:var(--red);cursor:pointer"
-          onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>
+          onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>`
+        : `<span style="font-size:9px;color:var(--muted)" title="Shared label made by @${esc(l.user_id)}">@${esc(l.user_id.substring(0,6))}</span>`}
       </div>`).join('')
     : '<div style="font-size:11px;color:var(--muted)">No labels yet — create one below</div>'}
     <div class="tag-new-row">
@@ -3407,7 +3411,11 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
           style="flex:1;font-size:11px" onkeydown="if(event.key==='Enter')_createTagLabel()">
         <button class="btn-sm primary" onclick="_createTagLabel()">Add</button>
       </div>
-    </div>`;
+    </div>
+    <label style="display:flex;align-items:center;gap:4px;margin-top:6px;font-size:10px;color:var(--muted);cursor:pointer"
+      title="Private labels are seen and used only by you. Leave unticked to share the label with everyone.">
+      <input type="checkbox" id="tag-new-private"> Private (only you)
+    </label>`;
 
   document.body.appendChild(pop);
   const rect = anchorEl.getBoundingClientRect();
@@ -3434,9 +3442,10 @@ async function _createTagLabel() {
   const label = (input?.value || '').trim();
   if (!label) return;
   try {
-    await gas('createTagLabel', label, _tagNewColor);
+    const isPrivate = !!document.getElementById('tag-new-private')?.checked;
+    await gas('createTagLabel', label, _tagNewColor, isPrivate);
     _tagLabels = null;
-    notify(`✓ Label "${label}" created`, 'success');
+    notify(`✓ ${isPrivate ? 'Private' : 'Shared'} label "${label}" created`, 'success');
     if (_tagActivePaper) openTagPopover(_tagActivePaper,
       document.querySelector(`.tags-cell span[onclick*="${_tagActivePaper}"]`) ||
       document.body);
@@ -3467,8 +3476,23 @@ async function _editTagLabel(labelId, currentLabel, currentColor) {
     if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
   } catch(e) { notify(e.message, 'error'); }
 }
+async function _toggleTagPrivate(labelId, label, makePrivate) {
+  const msg = makePrivate
+    ? `Make "${label}" private? Only you will see it and be able to use it.`
+    : `Share "${label}" with everyone? Colleagues will see this label and every paper and note you have tagged with it, and will be able to use it.`;
+  if (!confirm(msg)) return;
+  try {
+    await gas('setTagLabelPrivate', labelId, makePrivate);
+    _tagLabels = null;
+    notify(`✓ "${label}" is now ${makePrivate ? 'private' : 'shared'}`, 'success');
+    if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
+    await loadPapers();
+    renderSidebarTagFilter();
+    if (_currentPanel === 'paper') renderPaperViewTags();
+  } catch(e) { notify(e.message, 'error'); }
+}
 async function _deleteTagLabel(labelId, label) {
-  if (!confirm(`Delete label "${label}"? This will remove it from all papers.`)) return;
+  if (!confirm(`Delete label "${label}"? This removes it from all papers.`)) return;
   try {
     await gas('deleteTagLabel', labelId);
     _tagLabels = null;
@@ -3482,16 +3506,13 @@ async function _deleteTagLabel(labelId, label) {
 async function renderVennTagFilters() {
   const el = document.getElementById('venn-tag-filters');
   if (!el) return;
-  const labels = await getTagLabelsCache();
-  const myLabels = _showMyAnnotationsOnly
-    ? labels.filter(l => l.user_id === _currentUser)
-    : labels;
+  const myLabels = await getTagLabelsCache();
   el.innerHTML = myLabels.map(l =>
     `<button class="venn-filter-btn" id="btn-filter-tag-${l.id}"
       style="--tag-color:${l.color}"
       onclick="toggleVennFilter('tag:${l.id}')"
       title="Show only papers tagged: ${esc(l.label)}">
-      <span style="display:inline-block;width:8px;height:8px;background:${l.color};border-radius:1px;margin-right:3px;opacity:0.6"></span>${esc(l.label)}
+      <span style="display:inline-block;width:8px;height:8px;background:${l.color};border-radius:1px;margin-right:3px;opacity:0.6"></span>${esc(l.label)}${l.is_private ? ' 🔒' : ''}
     </button>`
   ).join('');
 }
@@ -3499,10 +3520,7 @@ let _activeTagFilters = new Set();
 async function renderSidebarTagFilter() {
   const el = document.getElementById('sidebar-tag-filter');
   if (!el) return;
-  const labels = await getTagLabelsCache(true);
-  const myLabels = _showMyAnnotationsOnly
-    ? labels.filter(l => l.user_id === _currentUser)
-    : labels;
+  const myLabels = await getTagLabelsCache(true);
   if (!myLabels.length) {
     el.innerHTML = '<div style="font-size:10px;color:var(--muted);padding:4px 0">No tags yet</div>';
     return;
@@ -3514,7 +3532,7 @@ async function renderSidebarTagFilter() {
       onclick="_toggleTagFilter('${l.id}')" title="${esc(l.label)} (${owner})">
       <span class="tag-sq${active?' outline':''}" style="background:${active?l.color:'transparent'};
         border:2px solid ${l.color};color:${active?'#fff':l.color}">${active?'✓':''}</span>
-      <span style="font-size:11px;${active?'color:var(--text)':'color:var(--muted)'}">${esc(l.label)}</span>
+      <span style="font-size:11px;${active?'color:var(--text)':'color:var(--muted)'}">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>
       ${l.user_id !== _currentUser ? `<span style="font-size:9px;color:var(--muted)">@${esc(l.user_id.substring(0,6))}</span>` : ''}
     </div>`;
   }).join('');

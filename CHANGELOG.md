@@ -1,5 +1,13 @@
 # Changelog
 
+## 29 October 2026: shared and private tag labels
+
+- **Tag labels are shared by default.** Every label appears for everyone (sidebar, tag picker, Venn filters), with Just me on or off, and anyone can use it, so a group can tag papers and notes with one label (for example, a project name). Who tagged what stays personal: **Just me** filters by your own tagging, **Everyone** by anyone's, and removing a tag removes only yours.
+- **Private labels** (tick *Private (only you)* when creating, or switch later with 👥 / 🔒): only you see and use them, in every view. Notes tagged with them stay visible as usual; only the tag is hidden.
+- Only a label's creator can rename, recolor, delete or switch it. Deleting it, or making it private, is refused once others have used it. Duplicate names are refused (capitals ignored). The limit stays at 8 labels per person.
+- Existing labels became shared.
+- Versions: Core library 7, Frontend web app 10, Capture web app 6.
+
 ## 29 October 2026: dashboard test pages
 
 - **Try a new dashboard page before it goes live:** `?branch=NAME` on the dashboard address loads `Index.html` from that branch; the normal address keeps loading `main` (Core 6, Frontend 9, Capture 5).

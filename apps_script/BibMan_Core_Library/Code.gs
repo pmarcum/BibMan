@@ -331,7 +331,8 @@ function dispatch(config, fn, ...args) {
     getBackfillList:       (library) => getBackfillList(config, library),
     // Tags
     getTagLabels:          (everyone) => getTagLabels(config, everyone),
-    createTagLabel:        (label, color) => createTagLabel(config, label, color),
+    createTagLabel:        (label, color, isPrivate) => createTagLabel(config, label, color, isPrivate),
+    setTagLabelPrivate:    (id, isPrivate) => setTagLabelPrivate(config, id, isPrivate),
     updateTagLabel:        (id, label, color) => updateTagLabel(config, id, label, color),
     deleteTagLabel:        (id) => deleteTagLabel(config, id),
     getPaperTags:          (paperId, everyone) => getPaperTags(config, paperId, everyone),
@@ -1139,7 +1140,8 @@ function backfillEmbeddings(config, paperId) { return apiCall(config, 'POST', `/
 function getBackfillList(config, library)    { return apiCall(config, 'GET',  '/api/backfill/list', null, library ? { library } : null); }
 // Tags
 function getTagLabels(config, everyone)         { return apiCall(config, 'GET',    `/api/tags/labels${everyone ? '?all=1' : ''}`); }
-function createTagLabel(config, label, color)   { return apiCall(config, 'POST',   '/api/tags/labels', { label, color }); }
+function createTagLabel(config, label, color, isPrivate) { return apiCall(config, 'POST', '/api/tags/labels', { label, color, is_private: !!isPrivate }); }
+function setTagLabelPrivate(config, id, isPrivate) { return apiCall(config, 'PATCH', `/api/tags/labels/${id}`, { is_private: !!isPrivate }); }
 function updateTagLabel(config, id, label, color){ return apiCall(config, 'PATCH', `/api/tags/labels/${id}`, { label, color }); }
 function deleteTagLabel(config, id)             { return apiCall(config, 'DELETE', `/api/tags/labels/${id}`); }
 function getPaperTags(config, paperId, everyone){ return apiCall(config, 'GET',    `/api/papers/${paperId}/tags${everyone ? '?all=1' : ''}`); }

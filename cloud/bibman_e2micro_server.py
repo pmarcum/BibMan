@@ -481,7 +481,7 @@ def _ensure_columns(conn):
     except Exception:
         pass
 
-    # user_tag_labels table — each user's personal label definitions
+    # user_tag_labels table — label definitions (shared, or private to their creator)
     try:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS user_tag_labels (
@@ -493,6 +493,13 @@ def _ensure_columns(conn):
                 UNIQUE(user_id, label)
             )
         ''')
+        conn.commit()
+    except Exception:
+        pass
+
+    # Labels are shared unless marked private (29 Oct 2026); existing labels become shared.
+    try:
+        conn.execute('ALTER TABLE user_tag_labels ADD COLUMN is_private INTEGER NOT NULL DEFAULT 0')
         conn.commit()
     except Exception:
         pass
@@ -1933,9 +1940,9 @@ def list_papers():
             FROM paper_tags pt
             JOIN user_tag_labels l ON l.id = pt.label_id
             JOIN papers p ON p.id = pt.paper_id
-            WHERE p.library_id = ?
+            WHERE p.library_id = ? AND (l.is_private = 0 OR l.user_id = ?)
             ORDER BY pt.user_id, l.label
-        ''', (library_id,)).fetchall()
+        ''', (library_id, user_id)).fetchall()
     else:
         tag_rows = conn.execute('''
             SELECT DISTINCT pt.paper_id, pt.user_id, l.id as label_id, l.label, l.color
@@ -4160,32 +4167,44 @@ def get_mention_count():
     return jsonify({'count': count})
 
 
-# ── User tags (post-it notes) ─────────────────────────────────────────────────
+# ── Tags (post-it notes) ──────────────────────────────────────────────────────
+# Labels are shared by default: everyone sees and can apply them, whatever Just me says. A private label
+# (is_private = 1) is seen and applied only by its creator. Applying a label stays personal: paper_tags records
+# who tagged what, and Just me shows only your own tagging. Only a label's creator may rename, recolor, delete
+# or switch it; deleting, or making private, a label others have used is refused. (Agreed 29 Oct 2026.)
+VISIBLE_LABEL = '(l.is_private = 0 OR l.user_id = ?)'   # shared labels plus your own private ones
+MAX_LABELS_PER_PERSON = 8
+
+def _label_used_by_others(conn, label_id, owner):
+    """'@name on N papers, ...' for people other than the owner who have used this label ('' if none)."""
+    rows = conn.execute('SELECT user_id, COUNT(DISTINCT paper_id) FROM paper_tags WHERE label_id=? AND user_id != ? '
+                        'GROUP BY user_id ORDER BY user_id', (label_id, owner)).fetchall()
+    return ', '.join(f'@{r[0]} on {r[1]} paper{"" if r[1] == 1 else "s"}' for r in rows)
+
+def _label_name_clash(conn, user_id, name, except_id='', shared_only=False):
+    """An existing label with this name (capitals ignored) that would be confusing next to it, or None."""
+    who = 'l.is_private = 0' if shared_only else VISIBLE_LABEL
+    args = (name, except_id) if shared_only else (user_id, name, except_id)
+    return conn.execute(f'SELECT l.label, l.user_id FROM user_tag_labels l WHERE {who} '
+                        'AND lower(l.label) = lower(?) AND l.id != ?', args).fetchone()
+
+def _clash_text(row, user_id):
+    return f'A label named "{row[0]}" already exists' + ('' if row[1] == user_id else f' (made by @{row[1]})') + '; please use that one.'
 
 @app.route('/api/tags/labels', methods=['GET'])
 @gas_auth_required
 def get_tag_labels():
-    """Get all tag labels. With ?all=1 returns everyone's, otherwise just current user's."""
-    user_id  = get_user_id()
-    conn     = get_db_connection()
-    show_all = request.args.get('all', '0') == '1'
-    if show_all:
-        rows = conn.execute('''
-            SELECT l.id, l.user_id, l.label, l.color, l.created_at,
-                   COUNT(pt.id) as usage_count
-            FROM user_tag_labels l
-            LEFT JOIN paper_tags pt ON pt.label_id = l.id
-            GROUP BY l.id ORDER BY l.user_id, l.label
-        ''').fetchall()
-    else:
-        rows = conn.execute('''
-            SELECT l.id, l.user_id, l.label, l.color, l.created_at,
-                   COUNT(pt.id) as usage_count
-            FROM user_tag_labels l
-            LEFT JOIN paper_tags pt ON pt.label_id = l.id
-            WHERE l.user_id = ?
-            GROUP BY l.id ORDER BY l.label
-        ''', (user_id,)).fetchall()
+    """Every label this person may see and use (shared labels plus their own private ones); ?all is ignored."""
+    user_id = get_user_id()
+    conn    = get_db_connection()
+    rows = conn.execute(f'''
+        SELECT l.id, l.user_id, l.label, l.color, l.created_at, l.is_private,
+               COUNT(pt.id) AS usage_count, COALESCE(SUM(pt.user_id = ?), 0) AS my_count
+        FROM user_tag_labels l
+        LEFT JOIN paper_tags pt ON pt.label_id = l.id
+        WHERE {VISIBLE_LABEL}
+        GROUP BY l.id ORDER BY lower(l.label)
+    ''', (user_id, user_id)).fetchall()
     conn.close()
     return jsonify(rows_to_list(rows))
 
@@ -4193,48 +4212,72 @@ def get_tag_labels():
 @app.route('/api/tags/labels', methods=['POST'])
 @gas_auth_required
 def create_tag_label():
-    """Create a new tag label for the current user."""
-    user_id = get_user_id()
-    data    = request.json or {}
-    label   = (data.get('label') or '').strip()
-    color   = (data.get('color') or '#f59e0b').strip()
+    """Create a label (shared unless is_private is true)."""
+    user_id    = get_user_id()
+    data       = request.json or {}
+    label      = (data.get('label') or '').strip()
+    color      = (data.get('color') or '#f59e0b').strip()
+    is_private = 1 if data.get('is_private') else 0
     if not label:
         return err('label required')
     conn = get_db_connection()
-    # Check max 8 labels per user
-    count = conn.execute('SELECT COUNT(*) FROM user_tag_labels WHERE user_id=?',
-                         (user_id,)).fetchone()[0]
-    if count >= 8:
+    count = conn.execute('SELECT COUNT(*) FROM user_tag_labels WHERE user_id=?', (user_id,)).fetchone()[0]
+    if count >= MAX_LABELS_PER_PERSON:
         conn.close()
-        return err('Maximum 8 labels per user')
+        return err(f'You already have {MAX_LABELS_PER_PERSON} labels, the most one person can create. '
+                   'Delete one of yours to make room.')
+    clash = _label_name_clash(conn, user_id, label)
+    if clash:
+        conn.close()
+        return err(_clash_text(clash, user_id))
     label_id = str(uuid.uuid4())
     try:
-        conn.execute('INSERT INTO user_tag_labels (id,user_id,label,color) VALUES (?,?,?,?)',
-                     (label_id, user_id, label, color))
+        conn.execute('INSERT INTO user_tag_labels (id,user_id,label,color,is_private) VALUES (?,?,?,?,?)',
+                     (label_id, user_id, label, color, is_private))
         conn.commit()
-    except Exception as e:
+    except Exception:
         conn.close()
         return err(f'Label already exists: {label}')
     conn.close()
-    return jsonify({'ok': True, 'id': label_id, 'label': label, 'color': color})
+    return jsonify({'ok': True, 'id': label_id, 'label': label, 'color': color, 'is_private': is_private})
 
 
 @app.route('/api/tags/labels/<label_id>', methods=['PATCH'])
 @gas_auth_required
 def update_tag_label(label_id):
-    """Update label name or color."""
+    """Rename, recolor, or switch shared/private (creator only)."""
     user_id = get_user_id()
     data    = request.json or {}
     conn    = get_db_connection()
-    label   = conn.execute('SELECT * FROM user_tag_labels WHERE id=? AND user_id=?',
-                           (label_id, user_id)).fetchone()
+    label   = conn.execute('SELECT * FROM user_tag_labels WHERE id=?', (label_id,)).fetchone()
     if not label:
         conn.close()
         return err('Label not found', 404)
-    new_label = (data.get('label') or label['label']).strip()
-    new_color = (data.get('color') or label['color']).strip()
-    conn.execute('UPDATE user_tag_labels SET label=?, color=? WHERE id=?',
-                 (new_label, new_color, label_id))
+    if label['user_id'] != user_id:
+        conn.close()
+        return err(f'Only the label\'s creator (@{label["user_id"]}) can change it.', 403)
+    new_label   = (data.get('label') or label['label']).strip()
+    new_color   = (data.get('color') or label['color']).strip()
+    new_private = (1 if data.get('is_private') else 0) if 'is_private' in data else label['is_private']
+    if new_label.lower() != label['label'].lower():
+        clash = _label_name_clash(conn, user_id, new_label, label_id)
+        if clash:
+            conn.close()
+            return err(_clash_text(clash, user_id))
+    if new_private and not label['is_private']:
+        others = _label_used_by_others(conn, label_id, user_id)
+        if others:
+            conn.close()
+            return err(f'"{label["label"]}" can\'t be made private because others have used it ({others}). '
+                       'Making it private would hide their tags.')
+    if label['is_private'] and not new_private:
+        clash = _label_name_clash(conn, user_id, new_label, label_id, shared_only=True)
+        if clash:
+            conn.close()
+            return err(f'A shared label named "{clash[0]}" (made by @{clash[1]}) already exists, so this one '
+                       'can\'t be shared under the same name. Rename it first.')
+    conn.execute('UPDATE user_tag_labels SET label=?, color=?, is_private=? WHERE id=?',
+                 (new_label, new_color, new_private, label_id))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -4243,9 +4286,20 @@ def update_tag_label(label_id):
 @app.route('/api/tags/labels/<label_id>', methods=['DELETE'])
 @gas_auth_required
 def delete_tag_label(label_id):
-    """Delete a label and all its paper_tags."""
+    """Delete a label and your uses of it (creator only; refused if others have used it)."""
     user_id = get_user_id()
     conn    = get_db_connection()
+    label   = conn.execute('SELECT * FROM user_tag_labels WHERE id=?', (label_id,)).fetchone()
+    if not label:
+        conn.close()
+        return err('Label not found', 404)
+    if label['user_id'] != user_id:
+        conn.close()
+        return err(f'Only the label\'s creator (@{label["user_id"]}) can delete it.', 403)
+    others = _label_used_by_others(conn, label_id, user_id)
+    if others:
+        conn.close()
+        return err(f'"{label["label"]}" can\'t be deleted because others have used it ({others}).')
     conn.execute('DELETE FROM paper_tags WHERE label_id=? AND user_id=?', (label_id, user_id))
     conn.execute('DELETE FROM user_tag_labels WHERE id=? AND user_id=?', (label_id, user_id))
     conn.commit()
@@ -4256,23 +4310,23 @@ def delete_tag_label(label_id):
 @app.route('/api/papers/<paper_id>/tags', methods=['GET'])
 @gas_auth_required
 def get_paper_tags(paper_id):
-    """Get all tags for a paper. With ?all=1 returns everyone's."""
+    """Tags on a paper: your own, or with ?all=1 everyone's (others' private labels never shown)."""
     user_id  = get_user_id()
     show_all = request.args.get('all', '0') == '1'
     conn     = get_db_connection()
     if show_all:
-        rows = conn.execute('''
+        rows = conn.execute(f'''
             SELECT pt.id, pt.user_id, pt.label_id, pt.annotation_id,
-                   l.label, l.color, pt.created_at
+                   l.label, l.color, l.is_private, pt.created_at
             FROM paper_tags pt
             JOIN user_tag_labels l ON l.id = pt.label_id
-            WHERE pt.paper_id = ?
+            WHERE pt.paper_id = ? AND {VISIBLE_LABEL}
             ORDER BY pt.annotation_id NULLS FIRST, pt.user_id, l.label
-        ''', (paper_id,)).fetchall()
+        ''', (paper_id, user_id)).fetchall()
     else:
         rows = conn.execute('''
             SELECT pt.id, pt.user_id, pt.label_id, pt.annotation_id,
-                   l.label, l.color, pt.created_at
+                   l.label, l.color, l.is_private, pt.created_at
             FROM paper_tags pt
             JOIN user_tag_labels l ON l.id = pt.label_id
             WHERE pt.paper_id = ? AND pt.user_id = ?
@@ -4285,7 +4339,7 @@ def get_paper_tags(paper_id):
 @app.route('/api/papers/<paper_id>/tags', methods=['POST'])
 @gas_auth_required
 def add_paper_tag(paper_id):
-    """Apply a tag label to a paper or a specific annotation within it."""
+    """Apply a label (any shared one, or your own private one) to a paper or a note within it."""
     user_id       = get_user_id()
     data          = request.json or {}
     label_id      = (data.get('label_id') or '').strip()
@@ -4293,7 +4347,7 @@ def add_paper_tag(paper_id):
     if not label_id:
         return err('label_id required')
     conn = get_db_connection()
-    label = conn.execute('SELECT * FROM user_tag_labels WHERE id=? AND user_id=?',
+    label = conn.execute(f'SELECT * FROM user_tag_labels l WHERE l.id=? AND {VISIBLE_LABEL}',
                          (label_id, user_id)).fetchone()
     if not label:
         conn.close()
@@ -4315,7 +4369,7 @@ def add_paper_tag(paper_id):
 @app.route('/api/papers/<paper_id>/tags/<label_id>', methods=['DELETE'])
 @gas_auth_required
 def remove_paper_tag(paper_id, label_id):
-    """Remove a tag from a paper or annotation."""
+    """Remove your own tag from a paper or annotation (other people's stay)."""
     user_id       = get_user_id()
     annotation_id = request.args.get('annotation_id') or None
     conn          = get_db_connection()
@@ -4347,8 +4401,9 @@ def get_tagged_papers():
     ph   = ','.join('?' * len(label_ids))
     if show_all:
         rows = conn.execute(
-            f'SELECT DISTINCT paper_id FROM paper_tags WHERE label_id IN ({ph})',
-            label_ids
+            f'SELECT DISTINCT pt.paper_id FROM paper_tags pt JOIN user_tag_labels l ON l.id = pt.label_id '
+            f'WHERE pt.label_id IN ({ph}) AND {VISIBLE_LABEL}',
+            label_ids + [user_id]
         ).fetchall()
     else:
         rows = conn.execute(
