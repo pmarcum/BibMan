@@ -527,17 +527,29 @@ function getAllowedUsers(config) {
  * injecting the logo (<!--LOGO_PLACEHOLDER-->) and serving via HtmlService —
  * GAS libraries cannot serve HtmlService output directly.
  */
-function fetchDashboardHtml() {
-  const url = 'https://raw.githubusercontent.com/pmarcum/BibMan/main/Index.html?t=' + Date.now();
+/**
+ * dashboardBranchName: the repo branch whose Index.html the dashboard should load. A ?branch=NAME link
+ * loads a test page from that branch (Core 6, agreed 29 Oct 2026); anything that isn't a plain branch name
+ * (letters, digits, - _ .) means the normal page from main.
+ */
+function dashboardBranchName(branch) {
+  return (typeof branch === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(branch)) ? branch : 'main';
+}
+function fetchDashboardHtml(branch) {
+  const b = dashboardBranchName(branch);
+  const url = 'https://raw.githubusercontent.com/pmarcum/BibMan/' + encodeURIComponent(b) + '/Index.html?t=' + Date.now();
   try {
     const resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true, deadline: 10 });
     if (resp.getResponseCode() === 200) return resp.getContentText();
   } catch(err) {
     Logger.log('BibManCore.fetchDashboardHtml: ' + err.message);
   }
+  // A test page that can't be found never falls back to main, so it can't be mistaken for the test page.
+  const which = b === 'main' ? '' : ' test page from branch "' + b + '"';
   return '<html><body style="font-family:monospace;padding:2em;">' +
-    '<h3 style="color:#f77e7e">BibMan dashboard temporarily unavailable</h3>' +
-    '<p>Could not fetch the dashboard from GitHub. Please try again in a moment.</p>' +
+    '<h3 style="color:#f77e7e">BibMan dashboard' + which + ' temporarily unavailable</h3>' +
+    '<p>Could not fetch the dashboard' + which + ' from GitHub. ' +
+    (b === 'main' ? 'Please try again in a moment.' : 'Check that the branch exists and contains Index.html.') + '</p>' +
     '</body></html>';
 }
 

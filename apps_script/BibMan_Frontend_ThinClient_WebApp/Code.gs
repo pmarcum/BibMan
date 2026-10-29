@@ -96,14 +96,16 @@ function doGet(e) {
     return HtmlService.createHtmlOutput(BibManCore.getAccessDeniedHtml(email))
       .setTitle('BibMan — Access Denied');
   }
-  let htmlContent = BibManCore.fetchDashboardHtml();
+  // ?branch=NAME loads a test page from that branch of the repo (needs Core 6); the normal link loads main.
+  const branch = BibManCore.dashboardBranchName((e && e.parameter && e.parameter.branch) || '');
+  let htmlContent = BibManCore.fetchDashboardHtml(branch);
   try {
     const logoHtml = HtmlService.createHtmlOutputFromFile('Logo').getContent();
     htmlContent = htmlContent.replace('<!--LOGO_PLACEHOLDER-->', logoHtml);
   } catch(err) {}
   return HtmlService
     .createHtmlOutput(htmlContent)
-    .setTitle('BibMan')
+    .setTitle(branch === 'main' ? 'BibMan' : 'BibMan (test page: ' + branch + ')')
     .setFaviconUrl('https://raw.githubusercontent.com/pmarcum/BibMan/main/favicon.png')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }

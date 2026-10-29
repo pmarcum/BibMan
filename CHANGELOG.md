@@ -1,5 +1,10 @@
 # Changelog
 
+## 29 October 2026: dashboard test pages
+
+- **Try a new dashboard page before it goes live:** `?branch=NAME` on the dashboard address loads `Index.html` from that branch; the normal address keeps loading `main` (Core 6, Frontend 9, Capture 5).
+- The new personal-marks display (yours filled, others' faint; "by @name" on other people's notes) is held back for now: as first written it stopped the dashboard from loading through Google's page delivery, so the previous page was restored. Personal marks themselves work (the server handles them).
+
 ## 29 October 2026: personal Key paper / Pinned / Follow-up marks
 
 - **Marks are personal, like tags.** Each person has their own Key paper, Pinned and Follow-up marks, on papers and on notes. **Just me** shows yours; **Everyone** shows everyone's, with yours filled and others' faint. Clearing your mark never touches anyone else's.

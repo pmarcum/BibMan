@@ -147,7 +147,7 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 
 **Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's Script Property equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the property records which release they installed (copied from `version.json` at the time), which need not equal their own deployment count.
 
-Current versions (29 October 2026): Core library **5** (Venn Search through Apps Script, cancellable; no Gemini key or server address in the browser), Frontend web app **8**, Capture web app **4**. Both web apps select Core version **5** under **Libraries**.
+Current versions (29 October 2026): Core library **6** (test pages; Venn Search through Apps Script, cancellable; no Gemini key or server address in the browser), Frontend web app **9**, Capture web app **5**. Both web apps select Core version **6** under **Libraries**.
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project, and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
@@ -156,6 +156,10 @@ To release a change:
 4. **Then** update the matching numbers and `…_notes` in `version.json` on `main`. In this order no instance shows a false "update available" banner; the other order shows one until the property is updated.
 
 The dashboard banners cover the Core library and the Frontend web app (there is no Capture banner). The Core check compares `version.json` with the Core project's Script Property, so it cannot tell whether each web app actually selects the newest Core: that is step 2's job.
+
+**Test pages before they go live.** Push a candidate `Index.html` to a branch (for example `ui-test`) and open the dashboard's usual address with `?branch=ui-test` added (`.../exec?branch=ui-test`). Only that browser tab gets the test page; its title says "BibMan (test page: ui-test)". Everyone else keeps the page on `main`. Branch names may contain only letters, digits, `-`, `_` and `.` (anything else loads `main`); a branch that doesn't exist shows "dashboard unavailable" instead of falling back to `main`. When the test page works, put the same file on `main`, then delete the branch.
+
+**Why test:** Google's page delivery (HtmlService) can reject JavaScript that runs fine in a normal browser. On 29 Oct 2026 a page that passed every local check stopped at "Loading library…" with `Uncaught SyntaxError ... Failed to execute 'write' on 'Document'` in the browser console (F12). If that happens on `main`, restore the previous `Index.html` first, then investigate on a test branch.
 
 **Anything pushed to `main` at the repo root is live for every instance immediately**: `Index.html`, `bookmarklet.js`, `version.json`, `favicon.png` and `synonyms/*.tsv` are fetched from `main` at run time. Test changes to those on a copy before pushing, and don't move or rename them.
 
