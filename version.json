@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 7,
-  "bibman_frontend_thinclient_webapp_version": 10,
-  "bibman_bookmarklet_capture_webapp_version": 6,
-  "bibman_core_library_notes": "v7: shared and private tag labels. In each web app: Libraries → BibManCore → select version 7, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v10: select Core 7 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v6: select Core 7 and redeploy (Code.gs unchanged)"
+  "bibman_core_library_version": 8,
+  "bibman_frontend_thinclient_webapp_version": 11,
+  "bibman_bookmarklet_capture_webapp_version": 7,
+  "bibman_core_library_notes": "v8: version number in code; search time limit worded from the server setting; Capture update notes fixed. In each web app: Libraries → BibManCore → select version 8, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v11: select Core 8 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v7: select Core 8 and redeploy (Code.gs unchanged)"
 }

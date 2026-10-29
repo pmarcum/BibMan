@@ -48,10 +48,10 @@ Every dashboard action, including Venn Search (since Core 4), goes from the brow
 A request through Apps Script must finish within about a minute, but a large Venn Search can take longer on an e2-micro. So Venn Search runs as a background job on the server (`/api/search/venn/start`, then `/api/search/venn/result/<id>`): Apps Script starts it and waits up to 5 seconds; if it isn't finished, the dashboard shows "Still searching" and keeps asking, up to 40 seconds per request. Agreed limits:
 - **2 minutes per search** (`VENN_JOB_MAX_SECONDS` in the server). After that the search is stopped on the server (its database work is interrupted) and the dashboard reports a timeout. If searches time out, try fewer or more specific terms, or a lower **Max results**.
 - **Cancel** stops the search on the server too, once it has been running for about 5 seconds (before that, the 2-minute stop applies).
-- The "2 minutes" wording appears in the dashboard (`Index.html`) and in the server's timeout message; change them together with `VENN_JOB_MAX_SECONDS`.
+- To change the limit, change only `VENN_JOB_MAX_SECONDS`. The server sends it with each search (`max_seconds`), and every message ("Still searching… up to 2 minutes", the timeout message) is worded from it.
 - Finished results are kept in the server's memory for 10 minutes (`VENN_JOB_KEEP_SECONDS`), then deleted.
 - A restart of BibMan loses searches that were running; run them again.
-- The dashboard itself gives up after 3 minutes without an answer (only if the server stops responding).
+- The dashboard itself gives up one minute after the limit without an answer (3 minutes today; only if the server stops responding).
 
 ## Personal marks (Key paper, Pinned, Follow-up)
 
@@ -148,25 +148,27 @@ Newer tables and columns are added by the server itself whenever it opens the da
 
 ## Updating the Apps Script side, and `version.json`
 
-Every deployed instance compares its own version numbers with [`version.json`](version.json) on `main` and shows an "update available" banner in the dashboard when it is behind. Each project's current number is a **Script Property**, not code:
+Every deployed instance compares its own version numbers with [`version.json`](version.json) on `main` and shows an "update available" banner in the dashboard when it is behind. The Core library's number is **in its code** (since Core 8); the two web apps' numbers are **Script Properties**:
 
-| Component | Script Property | `version.json` key |
+| Component | Where the number is set | `version.json` key |
 |---|---|---|
-| Core library | `BIBMAN_CORE_LIBRARY_VERSION` (in the Core project) | `bibman_core_library_version` |
+| Core library | `const BIBMAN_CORE_LIBRARY_VERSION = …;` near the top of the Core `Code.gs` | `bibman_core_library_version` |
 | Frontend web app | `FRONTEND_THINCLIENT_VERSION` | `bibman_frontend_thinclient_webapp_version` |
 | Capture web app | `BOOKMARKLET_CAPTURE_VERSION` | `bibman_bookmarklet_capture_webapp_version` |
 
-**Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's Script Property equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the property records which release they installed (copied from `version.json` at the time), which need not equal their own deployment count.
+**Why the Core number is in the code:** Script Properties are not saved with a library version. With the number in a property, every web app reported the newest Core number even while still running an older Core, so the "update Core" banner could never catch a web app that was not switched over. A number in the code is saved with each version, so each web app reports the Core it really uses. (The old Script Property `BIBMAN_CORE_LIBRARY_VERSION` is no longer read and can be deleted.) The web apps don't have this problem: each reads its own property from its own live code.
 
-Current versions (29 October 2026): Core library **6** (test pages; Venn Search through Apps Script, cancellable; no Gemini key or server address in the browser), Frontend web app **9**, Capture web app **5**. Both web apps select Core version **6** under **Libraries**.
+**Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's number (Core: in `Code.gs`; web apps: Script Property) equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the number records which release they installed, which need not equal their own deployment count.
+
+Current versions (29 October 2026): Core library **8** (version number in code; shared and private tag labels; test pages; Venn Search through Apps Script, cancellable; no Gemini key or server address in the browser), Frontend web app **11**, Capture web app **7**. Both web apps select Core version **8** under **Libraries**.
 
 To release a change:
-1. Update the files in `apps_script/`, paste them into the project, and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
+1. Update the files in `apps_script/`, paste them into the project (for a Core change, first set `BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs` to the number the new deployment will get), and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
 2. For a Core change: in **each** web app, open **Libraries → BibManCore**, select the new Core version, then redeploy that web app the same way. A web app's live deployment is a snapshot: changing the library setting in the editor has no effect until the web app is redeployed.
-3. Set each changed project's Script Property to its new deployment number.
+3. Set each changed web app's Script Property to its new deployment number (the Core number is already in its code).
 4. **Then** update the matching numbers and `…_notes` in `version.json` on `main`. In this order no instance shows a false "update available" banner; the other order shows one until the property is updated.
 
-The dashboard banners cover the Core library and the Frontend web app (there is no Capture banner). The Core check compares `version.json` with the Core project's Script Property, so it cannot tell whether each web app actually selects the newest Core: that is step 2's job.
+The dashboard banners cover the Core library and the Frontend web app (there is no Capture banner). The Core check compares `version.json` with the number in the Core code that each web app actually runs, so a web app left on an older Core shows the "update Core" banner.
 
 **Test pages before they go live.** Push a candidate `Index.html` to a branch (for example `ui-test`) and open the dashboard's usual address with `?branch=ui-test` added (`.../exec?branch=ui-test`). Only that browser tab gets the test page; its title says "BibMan (test page: ui-test)". Everyone else keeps the page on `main`. Branch names may contain only letters, digits, `-`, `_` and `.` (anything else loads `main`); a branch that doesn't exist shows "dashboard unavailable" instead of falling back to `main`. When the test page works, put the same file on `main`, then delete the branch.
 

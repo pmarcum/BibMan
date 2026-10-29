@@ -119,7 +119,7 @@ Only rows with both an email and a name count. Column C isn't used by the access
 ### 2b. `BibMan_Core_Library`
 
 1. New project → paste `Code.gs` and `appsscript.json`.
-2. Script Property: `BIBMAN_CORE_LIBRARY_VERSION` = the `bibman_core_library_version` number in [`version.json`](version.json).
+2. No version property is needed: the Core's version number is in its `Code.gs` (`BIBMAN_CORE_LIBRARY_VERSION`).
 3. **Deploy → New deployment → Library.** Copy the project's **Script ID** (Project Settings).
 
 ### 2c. `BibMan_Frontend_ThinClient_WebApp` (the dashboard)

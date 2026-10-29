@@ -3223,8 +3223,15 @@ VENN_JOB_KEEP_SECONDS = 600
 _venn_jobs      = {}
 _venn_jobs_lock = threading.Lock()
 _venn_tls       = threading.local()   # the job (if any) that the current thread is running
-VENN_TIMEOUT_MSG = ('This search took longer than 2 minutes and was stopped. Try fewer or more specific '
-                    'search terms, or a lower Max results.')
+def _duration_text(seconds):
+    """120 -> '2 minutes', 60 -> '1 minute', 90 -> '90 seconds' (the dashboard words its messages the same way)."""
+    if seconds % 60:
+        return f'{seconds} seconds'
+    return '1 minute' if seconds == 60 else f'{seconds // 60} minutes'
+# Every "2 minutes" message is worded from VENN_JOB_MAX_SECONDS: the server's own timeout message here, and the
+# dashboard's, which receives the limit as max_seconds with each job. Change the limit only above.
+VENN_TIMEOUT_MSG = (f'This search took longer than {_duration_text(VENN_JOB_MAX_SECONDS)} and was stopped. '
+                    'Try fewer or more specific search terms, or a lower Max results.')
 VENN_CANCEL_MSG  = 'Search cancelled.'
 
 class _StoppableConn:
@@ -3310,7 +3317,7 @@ def venn_search_start():
     job['timer'].daemon = True
     job['timer'].start()
     threading.Thread(target=run, daemon=True, name=f'venn-{job_id[:8]}').start()
-    return jsonify({'job_id': job_id})
+    return jsonify({'job_id': job_id, 'max_seconds': VENN_JOB_MAX_SECONDS})
 
 @app.route('/api/search/venn/result/<job_id>')
 @gas_auth_required
@@ -3322,7 +3329,7 @@ def venn_search_result(job_id):
                                                         'restarted). Please run it again.'})
         if job['status'] == 'running' and time.time() - job['started'] > VENN_JOB_MAX_SECONDS:
             _venn_job_stop(job, VENN_TIMEOUT_MSG)
-        out = {'status': job['status'], 'error': job['error']}
+        out = {'status': job['status'], 'error': job['error'], 'max_seconds': VENN_JOB_MAX_SECONDS}
         if job['status'] == 'done':
             out['result'] = job['result']
     return jsonify(out)

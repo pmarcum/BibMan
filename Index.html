@@ -2917,7 +2917,7 @@ async function runVennSearch() {
     // Sent through Apps Script (server-to-server), so networks that block the server's domain still work
     // and the Gemini key never reaches the browser. The server runs the search as a background job: if it
     // isn't finished within a few seconds, Apps Script returns {pending, job_id} and we keep asking for the
-    // result (Cancel stops the job). The server stops a search after 2 minutes.
+    // result (Cancel stops the job). The server stops a search after its limit (max_seconds, set on the server).
     let data = await gas('vennSearch', {
       queries,
       global_excludes: globalExcludes||[],
@@ -2929,13 +2929,15 @@ async function runVennSearch() {
       current_user: _currentUser
     });
     const _vennT0 = Date.now();
+    const _durText = s => s % 60 ? s + ' seconds' : (s === 60 ? '1 minute' : (s / 60) + ' minutes');
     while (data && data.pending) {
       if (_vennAborted || myRun !== _vennRun) return;
       _vennJobId = data.job_id;
+      const limitS = data.max_seconds || 120;
       document.getElementById('upset-pane').innerHTML =
         `<div class="upset-empty"><span class="spinner"></span>&nbsp; Still searching: ${queryList}`
-        + `<br><span style="color:var(--muted);font-size:11px">Large searches can take up to 2 minutes.</span></div>`;
-      if (Date.now() - _vennT0 > 180000) throw new Error('No answer from the server after 3 minutes. Please try again.');
+        + `<br><span style="color:var(--muted);font-size:11px">Large searches can take up to ${_durText(limitS)}.</span></div>`;
+      if (Date.now() - _vennT0 > (limitS + 60) * 1000) throw new Error(`No answer from the server after ${_durText(limitS + 60)}. Please try again.`);
       data = await gas('vennSearchResult', data.job_id);
     }
     if (myRun === _vennRun) _vennJobId = null;

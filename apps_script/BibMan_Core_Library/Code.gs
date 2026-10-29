@@ -65,10 +65,12 @@
 //   Core logic change:   bump BIBMAN_CORE_LIBRARY_VERSION + bibman_core_library_version in version.json
 //   UI change:           bump FRONTEND_THINCLIENT_VERSION + bibman_frontend_thinclient_webapp_version in version.json
 //   Capture webapp change:  bump BOOKMARKLET_CAPTURE_VERSION + bibman_bookmarklet_capture_webapp_version in version.json
-/*
-BIBMAN_CORE_LIBRARY_VERSION SHOULD BE PLACED IN THE SCRIPT PROPERTIES OF THIS FILE to represent the version of this library
-*/
-const BIBMAN_CORE_LIBRARY_VERSION = parseInt( PropertiesService.getScriptProperties().getProperty('BIBMAN_CORE_LIBRARY_VERSION'), 10) || 1;
+// THE CORE VERSION NUMBER IS SET HERE, IN THE CODE (since Core 8). Before Deploy → Manage deployments → New version,
+// set it to the number that deployment will get, and use the same number in version.json.
+// Why not a Script Property: properties are not saved with a library version, so every web app would report the
+// newest number even while still running an older Core, and the "update Core" banner would never appear.
+// The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
+const BIBMAN_CORE_LIBRARY_VERSION = 8;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -106,7 +108,7 @@ function _checkForUpdates(frontendThinClientVersion, bookmarkletCaptureVersion, 
         (v.bibman_bookmarklet_capture_webapp_version || 0) > (bookmarkletCaptureVersion || 1),
       coreLibraryNotes:        v.bibman_core_library_notes                    || '',
       frontendThinClientNotes: v.bibman_frontend_thinclient_webapp_notes      || '',
-      bookmarkletCaptureNotes: v.bibman_bookmarklet_capture_webapp_version     || '',
+      bookmarkletCaptureNotes: v.bibman_bookmarklet_capture_webapp_notes       || '',
       latestCoreLibrary:       v.bibman_core_library_version                  || 1,
       latestFrontendThinClient: v.bibman_frontend_thinclient_webapp_version   || 1,
       latestBookmarkletCapture: v.bibman_bookmarklet_capture_webapp_version   || 1,
@@ -1076,7 +1078,8 @@ function importBib(config, bibContent, library) { return apiCall(config, 'POST',
  * up to VENN_FIRST_WAIT_MS for the result (enough for most searches). If it isn't ready, it returns
  * { pending: true, job_id }, and the dashboard calls vennSearchResult(job_id), which waits up to
  * VENN_WAIT_MS each time, until it is; vennSearchCancel(job_id) stops it. The server stops a search
- * after 2 minutes. The older (queries, globalExcludes, library) form still runs as a single request.
+ * after VENN_JOB_MAX_SECONDS (its setting, 2 minutes) and passes that limit on as max_seconds, so the
+ * dashboard's wording follows it. The older (queries, globalExcludes, library) form still runs as a single request.
  */
 const VENN_FIRST_WAIT_MS = 5000, VENN_WAIT_MS = 40000, VENN_POLL_MS = 1500;
 function vennSearch(config, queriesOrOpts, globalExcludes, library) {
@@ -1099,7 +1102,7 @@ function vennSearchResult(config, jobId, waitMs) {
     const r = apiCall(config, 'GET', '/api/search/venn/result/' + encodeURIComponent(jobId));
     if (r.status === 'done')  return r.result;
     if (r.status === 'error') throw new Error(r.error || 'The search failed.');
-    if (Date.now() + VENN_POLL_MS > until) return { pending: true, job_id: jobId };
+    if (Date.now() + VENN_POLL_MS > until) return { pending: true, job_id: jobId, max_seconds: r.max_seconds };
     Utilities.sleep(VENN_POLL_MS);
   }
 }

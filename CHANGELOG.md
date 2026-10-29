@@ -1,5 +1,12 @@
 # Changelog
 
+## 29 October 2026: version number in code, search limit in one place
+
+- **The Core library's version number is now in its code** (`BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs`) instead of a Script Property. Script Properties are not saved with a library version, so every web app reported the newest Core even while running an older one, and the "update Core" banner could not catch a web app that had not been switched over.
+- **The Venn Search time limit is set in one place** (`VENN_JOB_MAX_SECONDS` on the server). The server sends it with each search, and the dashboard's "Still searching… up to 2 minutes" message, its own give-up point and the server's timeout message are all worded from it. The limit stays at 2 minutes.
+- **Capture web app update notes:** its update information carried the version number where the "what changed" text belonged.
+- Versions: Core library 8, Frontend web app 11, Capture web app 7.
+
 ## 29 October 2026: shared and private tag labels
 
 - **Tag labels are shared by default.** Every label appears for everyone (sidebar, tag picker, Venn filters), with Just me on or off, and anyone can use it, so a group can tag papers and notes with one label (for example, a project name). Who tagged what stays personal: **Just me** filters by your own tagging, **Everyone** by anyone's, and removing a tag removes only yours.
