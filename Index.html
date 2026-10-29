@@ -130,6 +130,10 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
   font-family:var(--mono);color:#fff;cursor:pointer;flex-shrink:0;
   text-shadow:0 1px 1px rgba(0,0,0,.4)}
 .tag-sq:hover{opacity:0.8;transform:scale(1.15)}
+.side-tag-ctl{display:none;margin-left:auto;gap:6px;font-size:11px}
+.side-tag-row:hover .side-tag-ctl{display:flex}
+.side-tag-ctl span{cursor:pointer;color:var(--muted)}
+.side-tag-ctl span:hover{color:var(--text)}
 .tags-cell{display:flex;gap:2px;align-items:center;flex-wrap:nowrap}
 /* Tag popover */
 .tag-popover{position:fixed;background:var(--surface);border:1px solid var(--border2);
@@ -3530,12 +3534,17 @@ async function renderSidebarTagFilter() {
   el.innerHTML = myLabels.map(l => {
     const active = _activeTagFilters.has(l.id);
     const owner  = l.user_id === _currentUser ? 'you' : '@'+l.user_id;
-    return `<div style="display:flex;align-items:center;gap:5px;padding:3px 0;cursor:pointer"
+    return `<div class="side-tag-row" style="display:flex;align-items:center;gap:5px;padding:3px 0;cursor:pointer"
       onclick="_toggleTagFilter('${l.id}')" title="${esc(l.label)} (${owner})">
       <span class="tag-sq${active?' outline':''}" style="background:${active?l.color:'transparent'};
         border:2px solid ${l.color};color:${active?'#fff':l.color}">${active?'✓':''}</span>
       <span style="font-size:11px;${active?'color:var(--text)':'color:var(--muted)'}">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>
-      ${l.user_id !== _currentUser ? `<span style="font-size:9px;color:var(--muted)">@${esc(l.user_id.substring(0,6))}</span>` : ''}
+      ${l.user_id !== _currentUser ? `<span style="font-size:9px;color:var(--muted)">@${esc(l.user_id.substring(0,6))}</span>` : `<span class="side-tag-ctl">
+        <span title="${l.is_private ? 'Private: click to share with everyone' : 'Shared: click to make private'}"
+          onclick="event.stopPropagation();_toggleTagPrivate('${l.id}','${esc(l.label)}',${l.is_private ? 'false' : 'true'})">${l.is_private ? '🔒' : '👥'}</span>
+        <span title="Rename" onclick="event.stopPropagation();_editTagLabel('${l.id}','${esc(l.label)}','${l.color}')">✎</span>
+        <span title="Delete this label" style="color:var(--red)" onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>
+      </span>`}
     </div>`;
   }).join('');
 }

@@ -6,6 +6,7 @@
 - **Private labels** (tick *Private (only you)* when creating, or switch later with 👥 / 🔒): only you see and use them, in every view. Notes tagged with them stay visible as usual; only the tag is hidden.
 - Only a label's creator can rename, recolor, delete or switch it. Deleting it, or making it private, is refused once others have used it. Duplicate names are refused (capitals ignored). The limit stays at 8 labels per person.
 - **Creating a label from a 🏷 button also applies it** to that note or paper. Before, it only created the label, and the picker then reopened for the whole paper.
+- **Manage your labels from the sidebar:** hover over one of your labels in the Tags list for 👥/🔒 (shared or private), ✎ (rename) and ✕ (delete).
 - Existing labels became shared.
 - Versions: Core library 7, Frontend web app 10, Capture web app 6.
 
