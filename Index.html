@@ -648,7 +648,7 @@ or add new database">?</span>
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
         <div style="font-family:var(--mono);font-size:9px;color:var(--muted);
           text-transform:uppercase;letter-spacing:.1em;padding:2px 0 4px 0">
-          🏷 Tags</div>
+          🏷️ Tags</div>
         <div id="sidebar-tag-filter"></div>
       </div>
     </div>
@@ -753,7 +753,7 @@ or add new database">?</span>
       <div class="anno-header">
         <div class="anno-header-title">Annotations</div>
         <div style="display:flex;align-items:center;gap:6px">
-          <button class="btn-sm" onclick="openTagPopoverForCurrentPaper(this)" title="Add/manage tags for this paper">🏷 Tag</button>
+          <button class="btn-sm" onclick="openTagPopoverForCurrentPaper(this)" title="Add/manage tags for this paper">🏷️ Tag</button>
           <div style="display:flex;align-items:center;gap:4px">
             <button class="btn-sm" onclick="openAnnModal()">+ Paper Note</button>
             <span class="nav-help" data-tip="Add a note about this paper as a whole. To highlight specific text instead, select it in the PDF and press Alt+A." onclick="event.stopPropagation()">?</span>
@@ -1953,7 +1953,7 @@ function _renderAnnotations(anns) {
     const tagBtn = document.createElement('button');
     tagBtn.className = 'ann-del';
     tagBtn.title = 'Tag this annotation with a post-it label';
-    tagBtn.textContent = '🏷';
+    tagBtn.textContent = '🏷️';
     tagBtn.addEventListener('click', e => { e.stopPropagation(); openTagPopover(_current.id, tagBtn, a.id); });
     // Flag buttons
     const kpBtn = document.createElement('button');
@@ -3386,7 +3386,7 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
   const pop = document.createElement('div');
   pop.className = 'tag-popover';
   pop.innerHTML = `
-    <h4>🏷 Tags</h4>
+    <h4>🏷️ Tags</h4>
     ${myLabels.length ? myLabels.map(l => `
       <div class="tag-label-row" onclick="_togglePaperTag('${paperId}','${l.id}',${appliedIds.has(l.id)},this)">
         <span class="tag-sq" style="background:${l.color}">${appliedIds.has(l.id)?'✓':''}</span>
