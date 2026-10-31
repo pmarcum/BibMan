@@ -137,56 +137,111 @@ def _test_vec_available() -> bool:
 VEC_AVAILABLE = _test_vec_available()
 log.info(f'sqlite-vec available: {VEC_AVAILABLE}')
 
-# ── USearch HNSW Index (loaded once at startup) ───────────────────────────────
-USEARCH_INDEX = None
-USEARCH_TIMESTAMP = None
-USEARCH_PATH = DB_PATH.parent / 'bibman_768_i8.usearch'
-USEARCH_TIMESTAMP_PATH = DB_PATH.parent / 'bibman_768.usearch.timestamp'
-USEARCH_METHOD_PATH = DB_PATH.parent / 'bibman_768_i8.usearch.method'  # written by bibman_rebuild_usearch.py
-USEARCH_METHOD = 'A'   # no file = the original April 2026 index (x127, queries sent as floats)
+# ── Keeping embeddings in step with passages and notes ────────────────────────
+# Embeddings live in vec0 tables, which foreign keys do not reach, so the code removes them itself. These helpers
+# work in chunks (SQLite limits how many values one statement takes) and log failures instead of hiding them.
+def existing_ids(conn, table: str, ids: list) -> set:
+    """Of `ids`, those still present in table.id (passages or annotations), checked just before saving
+    embeddings, so a passage replaced by a re-extraction meanwhile never gets one."""
+    found = set()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        found.update(r[0] for r in conn.execute(f'SELECT id FROM {table} WHERE id IN ({",".join("?" * len(chunk))})', chunk))
+    return found
+
+def delete_passage_embeddings(conn, passage_ids: list, where: str = ''):
+    """Remove the embeddings of these passages (call before deleting the passages themselves)."""
+    for i in range(0, len(passage_ids), 500):
+        chunk = passage_ids[i:i + 500]
+        try:
+            conn.execute(f'DELETE FROM vec_passages WHERE passage_id IN ({",".join("?" * len(chunk))})', chunk)
+        except Exception as e:
+            log.warning(f'{where or "delete"}: could not remove embeddings of {len(chunk)} passages ({e}); '
+                        'the nightly sweep will remove them')
+
+def delete_note_search_entries(conn, paper_id: str, where: str = ''):
+    """Remove the keyword and embedding entries of a paper's notes (call before deleting the notes themselves)."""
+    ids = [r[0] for r in conn.execute('SELECT id FROM annotations WHERE paper_id=?', (paper_id,))]
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]; ph = ','.join('?' * len(chunk))
+        for table in ('annotations_fts', 'vec_annotations'):
+            try:
+                conn.execute(f'DELETE FROM {table} WHERE annotation_id IN ({ph})', chunk)
+            except Exception as e:
+                log.warning(f'{where or "delete"}: could not remove {table} entries of {len(chunk)} notes ({e})')
+
+def sweep_orphan_embeddings(conn) -> tuple:
+    """Remove embeddings whose passage or note no longer exists. Returns (passages, notes) removed. Run nightly as a
+    safety net: the save and delete paths already avoid leaving any, so a growing count means a new cause to find."""
+    removed = []
+    for vec, rowids, col, table in (('vec_passages', 'vec_passages_rowids', 'passage_id', 'passages'),
+                                    ('vec_annotations', 'vec_annotations_rowids', 'annotation_id', 'annotations')):
+        try:
+            gone = [r[0] for r in conn.execute(f'SELECT id FROM {rowids} WHERE id NOT IN (SELECT id FROM {table})')]
+            for i in range(0, len(gone), 500):
+                chunk = gone[i:i + 500]
+                conn.execute(f'DELETE FROM {vec} WHERE {col} IN ({",".join("?" * len(chunk))})', chunk)
+            conn.commit()
+            removed.append(len(gone))
+        except Exception as e:
+            log.warning(f'orphan sweep of {vec} failed: {e}')
+            removed.append(0)
+    return tuple(removed)
+
+# ── USearch HNSW indexes: one per library (loaded once at startup) ──────────────
+# bibman_rebuild_usearch.py writes one index file per library and a list file describing them. Meaning-based search
+# only ever looks at the current library's index, so passages of other libraries can never take up its places.
+# The indexes are snapshots: they change only when the rebuild script runs, and the server loads them at startup.
+USEARCH_LIST_PATH = DB_PATH.parent / 'bibman_768_i8.libraries.json'   # written by bibman_rebuild_usearch.py
+USEARCH_INDEXES = {}      # library id -> {'index', 'method', 'built', 'name'}
+# A library without an index file yet (e.g. created after the last rebuild) is compared directly against its own
+# stored embeddings, which is exact but gets slower as the library grows; above this many passages it is not tried,
+# and the dashboard says the library needs a rebuild instead.
+DIRECT_SEARCH_MAX_PASSAGES = 20000
 
 def search_id_for(passage_id: str) -> int:
     """Search-index key for a passage: first 15 hex digits of its UUID, as a 60-bit integer (the April 2026
     migration's rule, prep_search_ids.py). Must match bibman_backfill_search_ids.py and the IDs in the database."""
     return int(passage_id.replace('-', '')[:15], 16)
 
-def quantize_query(v):
+def quantize_query(v, method: str):
     """Compress a 768-dim query exactly like the index's vectors (see bibman_rebuild_usearch.py)."""
-    if USEARCH_METHOD == 'C':
+    if method == 'C':
         m = float(np.abs(v).max()) or 1.0
         return np.clip(np.round(v / m * 127), -127, 127).astype(np.int8)
     return v  # methods A/B: the float query works as well as or better than a compressed one
 
-def _load_usearch_index():
-    """Load USearch index once at module import time."""
-    global USEARCH_INDEX, USEARCH_TIMESTAMP, USEARCH_METHOD
+def _load_usearch_indexes():
+    """Load every library's index (memory-mapped, so only the parts a search touches are read)."""
     try:
         from usearch.index import Index
-        if USEARCH_PATH.exists():
-            # Index is int8 quantized (336MB) to fit in e2-micro RAM
-            USEARCH_INDEX = Index.restore(str(USEARCH_PATH), view=True)
-            # Reduce expansion_search for faster queries on e2-micro (trade accuracy for speed)
-            USEARCH_INDEX.expansion_search = 8
-            log.info(f'USearch index loaded: {USEARCH_INDEX.size} vectors, {USEARCH_INDEX.ndim} dims, expansion={USEARCH_INDEX.expansion_search}')
-            if USEARCH_METHOD_PATH.exists():
-                try:
-                    m = USEARCH_METHOD_PATH.read_text().strip().upper()[:1]
-                except Exception:
-                    m = ''
-                if m in ('A', 'B', 'C'):
-                    USEARCH_METHOD = m
-                else:
-                    log.warning(f'{USEARCH_METHOD_PATH.name} is unreadable or not A/B/C; assuming method A')
-            log.info(f'USearch index compression method: {USEARCH_METHOD}')
-            if USEARCH_TIMESTAMP_PATH.exists():
-                USEARCH_TIMESTAMP = USEARCH_TIMESTAMP_PATH.read_text().strip()
-                log.info(f'USearch index timestamp: {USEARCH_TIMESTAMP}')
-        else:
-            log.warning(f'USearch index not found at {USEARCH_PATH}')
     except Exception as e:
-        log.warning(f'USearch not available: {e}')
+        log.warning(f'USearch not available: {e}'); return
+    if not USEARCH_LIST_PATH.exists():
+        log.warning(f'No per-library search indexes yet ({USEARCH_LIST_PATH.name} missing): run bibman_rebuild_usearch.py')
+        return
+    try:
+        listing = json.loads(USEARCH_LIST_PATH.read_text()).get('libraries', {})
+    except Exception as e:
+        log.warning(f'{USEARCH_LIST_PATH.name} is unreadable ({e}); meaning-based search will compare libraries directly')
+        return
+    for lib_id, entry in listing.items():
+        path = DB_PATH.parent / entry.get('file', '')
+        if not entry.get('file') or not path.exists():
+            log.warning(f'USearch index for {entry.get("name", lib_id)} listed but missing: {path.name}')
+            continue
+        try:
+            index = Index.restore(str(path), view=True)
+            index.expansion_search = 8   # faster queries on an e2-micro (trades a little accuracy for speed)
+            method = (entry.get('method') or 'A').upper()[:1]
+            USEARCH_INDEXES[lib_id] = {'index': index, 'method': method if method in 'ABC' else 'A',
+                                       'built': entry.get('built', ''), 'name': entry.get('name', lib_id)}
+            log.info(f'USearch index loaded for {entry.get("name", lib_id)}: {index.size} vectors, method '
+                     f'{USEARCH_INDEXES[lib_id]["method"]}, built {entry.get("built", "?")}')
+        except Exception as e:
+            log.warning(f'USearch index for {entry.get("name", lib_id)} could not be loaded: {e}')
 
-_load_usearch_index()
+_load_usearch_indexes()
 if EXPORT_CREDENTIAL and len(EXPORT_CREDENTIAL) < 16:
     log.warning('EXPORT_CREDENTIAL is set but shorter than 16 characters; it will NOT be accepted.')
 
@@ -916,13 +971,7 @@ def write_passages_to_db(paper_id: str, passages: list,
             'SELECT id FROM passages WHERE paper_id = ?', (paper_id,)
         ).fetchall()]
         if old_ids:
-            ph = ','.join('?' * len(old_ids))
-            try:
-                conn.execute(
-                    f'DELETE FROM vec_passages WHERE passage_id IN ({ph})', old_ids
-                )
-            except Exception:
-                pass
+            delete_passage_embeddings(conn, old_ids, 'store passages')
             conn.execute('DELETE FROM passages WHERE paper_id = ?', (paper_id,))
         for p in passages:  # key used by the semantic-search index (see search_id_for)
             p['search_id'] = search_id_for(p['id'])
@@ -1099,6 +1148,8 @@ def embed_annotation_background(ann_id: str, text: str, paper_id: str,
     try:
         # FTS — always, no API key needed
         conn = get_db_connection()
+        if not existing_ids(conn, 'annotations', [ann_id]):
+            conn.close(); return   # the note was deleted meanwhile
         try:
             conn.execute('DELETE FROM annotations_fts WHERE annotation_id=?', (ann_id,))
             conn.execute(
@@ -1112,6 +1163,8 @@ def embed_annotation_background(ann_id: str, text: str, paper_id: str,
         # Semantic embedding — only if Gemini key available and vec works
         if gemini_key and VEC_AVAILABLE:
             vec = embed_query(text, gemini_key)  # embed_query works for short texts too
+            if vec and not existing_ids(conn, 'annotations', [ann_id]):
+                vec = None   # the note was deleted while its embedding was being made
             if vec:
                 try:
                     conn.execute('DELETE FROM vec_annotations WHERE annotation_id=?', (ann_id,))
@@ -1320,6 +1373,11 @@ def run_cron():
                     vectors  = embed_passages(passages, gemini_key, embed_model)
                     if vectors:
                         conn = get_db_connection()
+                        still = existing_ids(conn, 'passages', [pid for pid, _ in vectors])
+                        if len(still) < len(vectors):
+                            log.info(f'Cron: {len(vectors) - len(still)} passages were replaced while being embedded; '
+                                     'their embeddings are not saved')
+                        vectors = [(pid, v) for pid, v in vectors if pid in still]
                         for pid, vec_bytes in vectors:
                             try:
                                 conn.execute(
@@ -1373,8 +1431,19 @@ def run_cron():
             except Exception as e:
                 log.error(f'Cron synonym step failed: {e}')
 
+            # ── Step 3: Remove embeddings left behind by deleted passages or notes ──
+            orphans = (0, 0)
+            try:
+                conn = get_db_connection()
+                orphans = sweep_orphan_embeddings(conn)
+                conn.close()
+                log.info(f'Cron: removed leftover embeddings: {orphans[0]} of passages, {orphans[1]} of notes')
+            except Exception as e:
+                log.error(f'Cron orphan sweep failed: {e}')
+
             elapsed = time.time() - start
-            log.info(f'=== GAS-triggered cron complete in {elapsed:.0f}s: {embedded} embeddings, {synonyms} synonym papers ===')
+            log.info(f'=== GAS-triggered cron complete in {elapsed:.0f}s: {embedded} embeddings, {synonyms} synonym papers, '
+                     f'{sum(orphans)} leftover embeddings removed ===')
 
         finally:
             _CRON_RUNNING = False
@@ -1799,14 +1868,9 @@ def delete_library(library_id):
             'SELECT id FROM passages WHERE paper_id=?', (paper_id,)
         ).fetchall()]
         if old_ids:
-            ph = ','.join('?'*len(old_ids))
-            try:
-                conn.execute(
-                    f'DELETE FROM vec_passages WHERE passage_id IN ({ph})', old_ids
-                )
-            except Exception:
-                pass
+            delete_passage_embeddings(conn, old_ids, 'delete library')
             conn.execute('DELETE FROM passages WHERE paper_id=?', (paper_id,))
+        delete_note_search_entries(conn, paper_id, 'delete library')
         conn.execute('DELETE FROM annotations WHERE paper_id=?', (paper_id,))
 
     # Delete all papers and the library itself
@@ -2106,15 +2170,12 @@ def delete_paper(paper_id):
         'SELECT id FROM passages WHERE paper_id=?', (paper_id,)
     ).fetchall()]
     if old_ids:
-        ph = ','.join('?'*len(old_ids))
-        try:
-            conn.execute(f'DELETE FROM vec_passages WHERE passage_id IN ({ph})', old_ids)
-        except Exception:
-            pass
+        delete_passage_embeddings(conn, old_ids, 'delete paper')
         conn.execute('DELETE FROM passages WHERE paper_id=?', (paper_id,))
     conn.execute('DELETE FROM annotation_flags WHERE annotation_id IN (SELECT id FROM annotations WHERE paper_id=?)',
                  (paper_id,))
     conn.execute('DELETE FROM paper_flags WHERE paper_id=?', (paper_id,))
+    delete_note_search_entries(conn, paper_id, 'delete paper')
     conn.execute('DELETE FROM annotations WHERE paper_id=?', (paper_id,))
     conn.execute('DELETE FROM papers WHERE id=?', (paper_id,))
     conn.commit()
@@ -2680,8 +2741,8 @@ def delete_annotation(ann_id):
         pass
     try:
         conn.execute('DELETE FROM vec_annotations WHERE annotation_id=?', (ann_id,))
-    except Exception:
-        pass
+    except Exception as e:
+        log.warning(f'delete note: could not remove its embedding ({e}); the nightly sweep will remove it')
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -2703,6 +2764,62 @@ def update_annotation_flags(ann_id):
     return jsonify({'ok': True})
 
 # ── Search ────────────────────────────────────────────────────────────────────
+SEMANTIC_HITS_PER_CIRCLE = 50    # nearest passages taken from the library's index for each circle
+SEMANTIC_MIN_SIMILARITY  = 0.75  # weaker meaning-based matches are dropped
+
+def semantic_available(conn, library_id):
+    """(ready, reason): can meaning-based search run for this library? A library with an index is ready; one without
+    is ready if it is small enough to compare directly; otherwise the reason says what to do."""
+    if library_id in USEARCH_INDEXES:
+        return True, ''
+    n = conn.execute('SELECT COUNT(*) FROM passages pa JOIN papers pp ON pp.id = pa.paper_id WHERE pp.library_id = ?',
+                     (library_id,)).fetchone()[0]
+    if n <= DIRECT_SEARCH_MAX_PASSAGES:
+        if n: log.warning(f'library {library_id} has no meaning-based index yet: comparing its {n} passages directly')
+        return True, ''
+    return False, (f'this library has no meaning-based index yet ({n:,} passages is too many to compare directly); '
+                   'run bibman_rebuild_usearch.py for it.')
+
+def semantic_hits(conn, library_id, q, direct_cache):
+    """Passages of this library whose meaning is closest to the query q (768 floats): [(passage_id, paper_id)].
+    Uses the library's own index; a library without one is compared directly against its stored embeddings."""
+    entry = USEARCH_INDEXES.get(library_id)
+    if entry:
+        matches = entry['index'].search(quantize_query(q, entry['method']), SEMANTIC_HITS_PER_CIRCLE)
+        keys = [int(k) for k, d in zip(matches.keys, matches.distances) if 1.0 - float(d) >= SEMANTIC_MIN_SIMILARITY]
+        if not keys:
+            return []
+        # Two small lookups rather than one join: without table statistics SQLite may answer the join by reading every
+        # passage of the library (382,000 rows for Extragalactic: minutes on a standard disk), as it once did for FTS.
+        rows = conn.execute(f'SELECT id, paper_id FROM passages WHERE search_id IN ({",".join("?" * len(keys))})', keys).fetchall()
+        if not rows:
+            return []
+        # papers moved to another library since the index was built are still in it: keep this library's only
+        papers = list({r['paper_id'] for r in rows})
+        here = {r[0] for r in conn.execute(f'SELECT id FROM papers WHERE id IN ({",".join("?" * len(papers))}) AND library_id = ?',
+                                           papers + [library_id])}
+        return [(r['id'], r['paper_id']) for r in rows if r['paper_id'] in here]
+    if 'X' not in direct_cache:   # read this library's embeddings once per search
+        ids, papers, vecs = [], [], []
+        rows = conn.execute('SELECT pa.id, pa.paper_id FROM passages pa JOIN papers pp ON pp.id = pa.paper_id '
+                            'WHERE pp.library_id = ?', (library_id,)).fetchall()
+        paper_of = {r['id']: r['paper_id'] for r in rows}
+        pids = list(paper_of)
+        for i in range(0, len(pids), 500):
+            chunk = pids[i:i + 500]
+            for r in conn.execute(f'SELECT passage_id, embedding FROM vec_passages WHERE passage_id IN '
+                                  f'({",".join("?" * len(chunk))})', chunk):
+                if r[1]:
+                    ids.append(r[0]); papers.append(paper_of[r[0]]); vecs.append(np.frombuffer(r[1], dtype=np.float32)[:768])
+        X = np.stack(vecs) if vecs else np.zeros((0, 768), np.float32)
+        direct_cache.update(X=X / np.maximum(np.linalg.norm(X, axis=1, keepdims=True), 1e-12), ids=ids, papers=papers)
+    X = direct_cache['X']
+    if not len(X):
+        return []
+    sim = X @ (q / max(float(np.linalg.norm(q)), 1e-12))
+    top = np.argsort(-sim)[:SEMANTIC_HITS_PER_CIRCLE]
+    return [(direct_cache['ids'][j], direct_cache['papers'][j]) for j in top if sim[j] >= SEMANTIC_MIN_SIMILARITY]
+
 @app.route('/api/search/venn', methods=['POST'])
 @gas_auth_required
 def venn_search():
@@ -2839,6 +2956,9 @@ def venn_search():
 
     ads_token, gemini_key = get_request_tokens()
     semantic_errors = set()   # plain-language reasons meaning-based search failed (shown in the dashboard)
+    semantic_ready, why_not = semantic_available(conn, library_id) if use_semantic else (False, '')
+    if why_not: semantic_errors.add(why_not)
+    _direct_cache = {}        # a library without an index: its embeddings, read once per search
 
     # Parse and expand each query
     expanded_queries = [expand_terms(q) for q in queries]
@@ -2874,8 +2994,8 @@ def venn_search():
         except Exception as e:
             log.warning(f'FTS circle {ci} failed: {e}')
 
-        # ── Hybrid semantic search (USearch + sqlite-vec) ─────────────────────
-        if use_semantic and not skip_semantic and USEARCH_INDEX is not None:
+        # ── Meaning-based search: this library's own index only ───────────────
+        if use_semantic and not skip_semantic and semantic_ready:
             q_vec, why = embed_query_detail(queries[ci], gemini_key)
             if not q_vec and why:
                 semantic_errors.add(why)
@@ -2883,31 +3003,12 @@ def venn_search():
                 # Unpack bytes to list, then truncate to 768 dims (MRL) and convert to numpy
                 full_vec = struct.unpack(f'{len(q_vec)//4}f', q_vec)
                 q_vec_truncated = np.array(full_vec[:768], dtype=np.float32)
-                # Query USearch for bulk of library
                 try:
-                    matches = USEARCH_INDEX.search(quantize_query(q_vec_truncated), 50)  # Reduced to 50 for speed on e2-micro
-                    # Apply score threshold — filter weak semantic matches
-                    search_ids = []
-                    for key, distance in zip(matches.keys, matches.distances):
-                        similarity = 1.0 - float(distance)
-                        if similarity >= 0.75:
-                            search_ids.append(key)
-                    
-                    # Convert search_ids back to passage_ids
-                    if search_ids:
-                        ph = ','.join('?' * len(search_ids))
-                        rows = conn.execute(f'''
-                            SELECT pa.id AS passage_id, pa.paper_id
-                            FROM passages pa
-                            WHERE pa.search_id IN ({ph})
-                        ''', list(map(int, search_ids))).fetchall()
-                        
-                        for row in rows:
-                            pid = row['passage_id']
-                            passage_circle_map[pid].add(ci)
-                            passage_to_paper[pid] = row['paper_id']
+                    for pid, paper_id in semantic_hits(conn, library_id, q_vec_truncated, _direct_cache):
+                        passage_circle_map[pid].add(ci)
+                        passage_to_paper[pid] = paper_id
                 except Exception as e:
-                    log.warning(f'USearch circle {ci} failed: {e}')
+                    log.warning(f'meaning-based search, circle {ci} failed: {e}')
 
     # ── Annotation search ────────────────────────────────────────────────────
     ann_circle_map = defaultdict(set)  # annotation_id -> set of circle indices
@@ -3206,7 +3307,7 @@ def venn_search():
         'upset_data':         upset_data,
         'annotation_results': annotation_results,
         'total':              total,
-        'semantic_skipped':   not bool(gemini_key) or USEARCH_INDEX is None,
+        'semantic_skipped':   not bool(gemini_key) or not semantic_ready,
         'semantic_error':     ' '.join(sorted(semantic_errors)),
     })
 
@@ -3959,6 +4060,9 @@ def backfill_embeddings(paper_id):
     if to_embed:
         embedded = embed_passages(to_embed, gemini_key, get_request_models()[0])
         if embedded:
+            still = existing_ids(conn, 'passages', [pid for pid, _ in embedded])
+            embedded = [(pid, v) for pid, v in embedded if pid in still]
+        if embedded:
             try:
                 conn.executemany(
                     'INSERT OR IGNORE INTO vec_passages (passage_id, embedding) VALUES (?,?)',
@@ -3999,7 +4103,7 @@ def get_annotation_backfill_list():
                p.bibkey
         FROM annotations a
         JOIN papers p ON p.id = a.paper_id
-        WHERE a.id NOT IN (SELECT annotation_id FROM vec_annotations_rowids)
+        WHERE a.id NOT IN (SELECT id FROM vec_annotations_rowids)
           AND (a.user_note IS NOT NULL OR a.quote IS NOT NULL)
         ORDER BY p.bibkey
     ''').fetchall()
@@ -4052,6 +4156,8 @@ def embed_annotation_endpoint(ann_id):
     # Vector embedding
     if VEC_AVAILABLE:
         vec = embed_query(text, gemini_key)
+        if vec and not existing_ids(conn, 'annotations', [ann_id]):
+            vec = None   # the note was deleted while its embedding was being made
         if vec:
             try:
                 conn.execute('DELETE FROM vec_annotations WHERE annotation_id=?', (ann_id,))

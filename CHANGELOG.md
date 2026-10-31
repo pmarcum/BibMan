@@ -1,5 +1,16 @@
 # Changelog
 
+## 31 October 2026: meaning-based search per library; no leftover embeddings
+
+- **Meaning-based search stays in the current library.** Each library now has its own search index (`bibman_768_i8.lib-<library id>.usearch`, listed in `bibman_768_i8.libraries.json`), and a search looks only at the current library's. Before, there was one index for all libraries: its nearest matches could come from any library, so other libraries' papers showed up in results and took up places a relevant passage of this library could have had. Keyword and note searches were already limited to the library.
+- **`bibman_rebuild_usearch.py` builds one index per library**, all of them or only those named with `--library NAME`. A small library rebuilds in seconds, so after moving papers you can bring it up to date at once. Each library keeps its previous index as `.prev`; `--rollback --library NAME` swaps it back.
+- **Passages are added to an index in random order**, shuffled across the library: added paper by paper, the index found passages less reliably among each paper's very similar passages. **A better check** before a new index is installed (300 passages spread across the library; at least 97% must come back within the first 10), and a new index that fails it is kept as `.failed` (`--recheck --library NAME` checks it again and installs it if it passes).
+- A paper moved to another library drops out of its old library's meaning-based results at once (each hit is checked), and joins the new library's at that library's next rebuild. A library without an index yet is compared directly against its own embeddings, up to 20,000 passages.
+- **No more leftover embeddings.** Embeddings are saved only for passages and notes that still exist (a paper re-extracted while the nightly job was embedding it used to leave embeddings for passages that no longer existed), deleting a paper or library now also removes its notes' keyword and embedding entries, and failures to remove embeddings are logged instead of being silently ignored. As a safety net, the nightly job removes any embedding whose passage or note no longer exists and logs how many.
+- Meaning-based hits are mapped back to passages with two indexed lookups, not a join: without table statistics SQLite answered the join by reading every passage of the library, which made searches time out.
+- **Fixed:** the list of notes still missing an embedding (`/api/backfill/annotations`) failed with an error.
+- Server only: no Apps Script versions change.
+
 ## 29 October 2026: version number in code, search limit in one place
 
 - **The Core library's version number is now in its code** (`BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs`) instead of a Script Property. Script Properties are not saved with a library version, so every web app reported the newest Core even while running an older one, and the "update Core" banner could not catch a web app that had not been switched over.

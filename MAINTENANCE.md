@@ -8,7 +8,7 @@ For whoever hosts a BibMan instance. Setup is in [DEPLOY.md](DEPLOY.md). This pa
 |---|---|
 | `/home/bibman/bibman/` | Server code (`bibman_e2micro_server.py`, `bibman_cron.py`, `bibman_rebuild_usearch.py`) and its `venv/` |
 | `/home/bibman/bibman.db` | The SQLite database: every library, paper, passage, annotation, tag, and the 3072-dim Gemini embeddings (`vec_passages`, `vec_annotations`). **This is the data. It is not in git.** |
-| `/home/bibman/bibman_768_i8.usearch` | Semantic-search index, loaded into memory when the service starts. Can always be rebuilt from the database. |
+| `/home/bibman/bibman_768_i8.lib-<library id>.usearch` | Semantic-search indexes, one per library, loaded when the service starts and listed in `bibman_768_i8.libraries.json`. Can always be rebuilt from the database. (`bibman_768_i8.usearch`, the shared index used before 31 Oct 2026, is no longer read and can be deleted.) |
 | `/home/bibman/bibman_config.json` | Small runtime settings the server writes itself (current library, last-seen Apps Script URL). |
 | `/etc/systemd/system/bibman.service` | Service definition, including `SESSION_SECRET` and `GAS_CREDENTIAL`. |
 | `/etc/systemd/system/bibman.service.d/export-credential.conf` | Optional: the read-only `EXPORT_CREDENTIAL` for gooTeX. |
@@ -22,7 +22,7 @@ The database path comes from `DB_PATH` in the service file; the index and config
 sudo systemctl status bibman                 # running?
 sudo journalctl -u bibman -n 100 --no-pager  # recent log
 sudo journalctl -u bibman -f                 # follow the log live
-sudo systemctl restart bibman                # restart (takes a few seconds; reloads the index)
+sudo systemctl restart bibman                # restart (takes a few seconds; reloads the indexes)
 curl -s https://YOUR-SUBDOMAIN.duckdns.org/health
 ```
 
@@ -30,12 +30,12 @@ curl -s https://YOUR-SUBDOMAIN.duckdns.org/health
 
 | Job | Runs from | When | What it does |
 |---|---|---|---|
-| Nightly processing (`runNightlyCron`) | Apps Script time trigger in the **Frontend** project (created once by `setupCronTrigger`) | Daily, about 5 am Pacific | Calls `POST /api/cron/run` with the Gemini key; the server then embeds new passages and generates synonym pairs in the background, in small batches |
-| Search-index rebuild | **Not scheduled**: run by hand (see "The semantic-search index") | After adding a batch of papers, or monthly | Rebuilds the usearch file from the stored embeddings |
+| Nightly processing (`runNightlyCron`) | Apps Script time trigger in the **Frontend** project (created once by `setupCronTrigger`) | Daily, about 5 am Pacific | Calls `POST /api/cron/run` with the Gemini key; the server then embeds new passages, generates synonym pairs, and removes embeddings left behind by deleted passages or notes, in the background, in small batches |
+| Search-index rebuild | **Not scheduled**: run by hand (see "The semantic-search index") | After adding a batch of papers, after moving papers between libraries, or monthly | Rebuilds the usearch files (one per library) from the stored embeddings |
 
 **Why the nightly job runs from Apps Script and not from the VM's crontab:** the VM never stores the Gemini key. Each user's key lives only in Script Properties and is sent with each request, so a job on the VM would have no key to use. The Apps Script trigger supplies it each night. This also means a compromised VM exposes no Gemini key at rest. (The old crontab lines, and those in `bibman_cron.py`'s docstring, are disabled and superseded.)
 
-**Why the index rebuild isn't scheduled:** on an e2-micro it is slow and heavy (about 4 hours for ~390,000 passages, because the e2-micro is held to about a quarter of a CPU for sustained work; a few hundred MB of memory), it should run when nobody is using BibMan or gooTeX, and the new index only takes effect after a restart. A person should watch it and check the result.
+**Why the index rebuild isn't scheduled:** on an e2-micro a large library is slow and heavy to rebuild (about 4 hours for ~390,000 passages, because the e2-micro is held to about a quarter of a CPU for sustained work; a few hundred MB of memory), it should run when nobody is using BibMan or gooTeX, and the new index only takes effect after a restart. A person should watch it and check the result.
 
 BibMan needs no crontab entries on the VM. If gooTeX shares the VM, its own monthly cache cleanup is in the `bibman` user's crontab; leave that alone.
 
@@ -88,11 +88,13 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 
 **How it works**
 - **Embeddings:** Gemini returns 3072-dimensional embeddings, and they are stored at full size in the database.
-- **The index:** for speed and to fit in 1 GB of RAM, meaning-based search uses a separate **usearch** index. It holds the first 768 dimensions of each embedding (Gemini embeddings are designed to be truncated this way), compressed to int8. On a large library it is a few hundred MB. Never build it as float16 or at more dimensions on an e2-micro: it will not fit in memory.
+- **The indexes:** for speed and to fit in 1 GB of RAM, meaning-based search uses a separate **usearch** index for each library, and a search looks only at the current library's index (so other libraries' passages can never take up its places). Each holds the first 768 dimensions of each embedding (Gemini embeddings are designed to be truncated this way), compressed to int8. For a large library it is a few hundred MB; a small one, well under 1 MB. Never build it as float16 or at more dimensions on an e2-micro: it will not fit in memory.
 - **Keys:** index keys are each passage's `search_id`, a 60-bit number taken from the first 15 hex digits of the passage's UUID: `int(uuid.replace('-', '')[:15], 16)` (the rule the April 2026 migration used). **Why 15 digits, not 16:** SQLite stores integers as *signed* 64-bit numbers (largest 2^63 − 1). Sixteen hex digits make a 64-bit number, which is too big for about half of all UUIDs, and the April migration failed on them; fifteen digits (60 bits) always fit. (usearch itself accepts any unsigned 64-bit key, so it is not the limit.) **Uniqueness:** in a random (version 4) UUID the 13th hex digit is always `4`, so those 15 digits carry 56 random bits, about 7×10^16 possible IDs. The chance of any two passages sharing an ID is about n²/(2×2^56): roughly 1 in a million at 390,000 passages, and still under 1 in 1,000 at 10 million passages (about 25 times this library). A shared ID can't detach notes or tags, which are linked by UUID; at worst one meaning-search hit would show the wrong passage. `bibman_backfill_search_ids.py` refuses to write any ID that would collide. **Never change this rule:** every existing ID and the index keys depend on it. Search results are mapped back to passages through that column. The server sets it for every new passage (since 6 Oct 2026). Before that, passages added after the April 2026 migration got none.
-- **Compression method:** `bibman_768_i8.usearch.method`, written by the rebuild script, records how vectors were compressed. The server reads it at startup and compresses search queries the same way. With no file, it assumes the original April 2026 method (A).
+- **The list file:** `bibman_768_i8.libraries.json`, written by the rebuild script, records each library's index file, its number of vectors, when it was built, and its compression method (how vectors were compressed to int8; the server compresses search queries the same way). Files are named by the library's ID, so renaming a library changes nothing.
+- **A library without an index yet** (for example one created after the last rebuild) is compared directly against its own stored embeddings, which is exact. This gets slower as a library grows, so above 20,000 passages (`DIRECT_SEARCH_MAX_PASSAGES` in the server) it is not tried: the dashboard says meaning-based search is unavailable and the library needs a rebuild.
+- **Leftover embeddings:** a passage or note that is deleted, or replaced when a paper is re-extracted, has its embedding removed with it, and embeddings are only saved for passages and notes that still exist. As a safety net the nightly job also removes any embedding whose passage or note no longer exists, and logs how many (`removed leftover embeddings: …`). That count should normally be 0; if it keeps growing, something is leaving them behind.
 
-**The index is a snapshot.** It does not update itself as papers are added. New papers are found by word and synonym search straight away, but meaning-based search only finds them after a rebuild. Rebuild after adding a batch of papers, or monthly.
+**The indexes are snapshots.** They do not update themselves as papers are added or moved. New papers are found by word and synonym search straight away, but meaning-based search only finds them after their library's rebuild. A paper moved to another library drops out of its old library's meaning-based results at once, and appears in the new library's after that library is rebuilt. Rebuild after adding a batch of papers, after moving papers, or monthly.
 
 **Scripts** (in `cloud/`, installed in `/home/bibman/bibman/`; all run as `bibman` with BibMan's Python):
 
@@ -100,9 +102,9 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 |---|---|---|
 | `bibman_search_check.py` | Counts passages missing a search ID, verifies the ID formula against existing IDs, identifies how the live index was built, measures search accuracy on a sample, and reports disk and memory. | No (read-only) |
 | `bibman_backfill_search_ids.py` | Fills in missing search IDs. Dry run by default; `--apply` writes. It refuses to write unless the formula reproduces every existing ID and no new ID collides. | Only with `--apply`, and only rows that have no ID |
-| `bibman_rebuild_usearch.py` | Rebuilds the index from stored embeddings (no Gemini calls). It writes to a temporary file, checks it, keeps the current index as `bibman_768_i8.usearch.prev`, then installs the new one. It does not restart BibMan. | The index files only; the database is opened read-only |
+| `bibman_rebuild_usearch.py` | Rebuilds the indexes from stored embeddings (no Gemini calls): every library, or only those named with `--library NAME`. For each library it adds the passages in random order (see below), writes to a temporary file, checks it, keeps the current index as its `.prev`, then installs the new one and updates the list file. A new index that fails its check is kept as `.failed`. It does not restart BibMan. | The index files and the list file only (plus temporary files it removes); the database is opened read-only |
 
-**Rebuilding.** Do this when nobody is using BibMan **or gooTeX**. The build needs about 420 MB of memory for a 390,000-passage library, and `nice` lowers its CPU priority but not its memory use.
+**Rebuilding.** For a large library, do this when nobody is using BibMan **or gooTeX**. Libraries are built one at a time (small ones first, in seconds), so peak memory is set by the largest: about 420 MB for a 390,000-passage library. `nice` lowers its CPU priority but not its memory use. A small library alone (`--library Satellites`) takes seconds and can be rebuilt any time.
 
 1. **Back up first:** take a snapshot of the VM's disk (Compute Engine → Disks → the VM's disk → *Create snapshot*). It costs cents and covers everything, including the database.
 2. **Run the scripts:**
@@ -110,22 +112,25 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 cd /home/bibman/bibman
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
 sudo -u bibman venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
-sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --dry-run      # checks paths and the .prev backup
+sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --dry-run      # lists each library's passages and any .prev backups
 # about 4 hours for ~390,000 passages on an e2-micro; runs in the background, so a dropped SSH session doesn't stop it
 sudo -u bibman nohup nice -n 19 venv/bin/python bibman_rebuild_usearch.py > ~/rebuild.log 2>&1 &
-tail -f ~/rebuild.log                          # watch progress (Ctrl+C stops watching, not the rebuild); wait for "installed"
+# (or only one library:  sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --library Satellites)
+tail -f ~/rebuild.log                          # watch progress (Ctrl+C stops watching, not the rebuild); wait for "finished"
 sudo systemctl restart bibman
-sudo journalctl -u bibman -n 8 --no-pager     # expect "USearch index loaded: N vectors" and "compression method: C"
+sudo journalctl -u bibman -n 12 --no-pager    # expect one "USearch index loaded for <library>: N vectors, method C" per library
 ```
-3. **About the old index:** the rebuild keeps it as `bibman_768_i8.usearch.prev` and **refuses to overwrite** an existing `.prev`. For later routine rebuilds, once you're happy with the current index, add `--replace-prev` (or delete the old `.prev` yourself).
-4. **About the fill-in:** `bibman_backfill_search_ids.py` also narrows the database trigger `passages_au` so it fires only when a passage's *text* changes. Before, setting an ID would also rewrite that passage's keyword-index entry. New installations get the narrowed trigger from `schema.sql`.
+3. **How a new index is checked:** it must hold every passage, and of 300 passages chosen at random across the library, each must be present and at least 97% must come back within the first 10 when searched with their own meaning, at the server's search settings (the October 2026 Extragalactic index scored 99%). The result line shows all the figures. If the check fails, the library keeps its current index and the new one is kept as `bibman_768_i8.lib-<library id>.usearch.failed`; `--recheck --library NAME` checks it again and installs it if it passes, so a long rebuild is never thrown away.
+4. **Why passages are added in random order:** added one paper after another, as in the first per-library build (31 Oct 2026), the index finds passages noticeably less reliably among a paper's very similar passages (that build failed its check). So the script reads the library once into temporary files next to the database (about 300 MB for 390,000 passages), then adds the passages shuffled across the whole library. The shuffle uses a fixed seed, so the same data gives the same index. The temporary files are removed afterwards.
+5. **About the old indexes:** the rebuild keeps each library's current index as its `.prev` and **refuses to overwrite** an existing `.prev` (it checks every library before building anything). For later routine rebuilds, once you're happy with the current indexes, add `--replace-prev` (or delete the old `.prev` files yourself).
+6. **About the fill-in:** `bibman_backfill_search_ids.py` also narrows the database trigger `passages_au` so it fires only when a passage's *text* changes. Before, setting an ID would also rewrite that passage's keyword-index entry. New installations get the narrowed trigger from `schema.sql`.
 
 **To go back to the previous index:**
 ```
-sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_rebuild_usearch.py --rollback
+sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_rebuild_usearch.py --rollback --library Extragalactic
 sudo systemctl restart bibman
 ```
-This swaps the index and its method file with the `.prev` pair. Running it again swaps them back.
+This swaps that library's index with its `.prev` (and its entry in the list file). Running it again swaps them back.
 
 Never run the old one-off `reindex_i8.py`: it overwrites the index file that the running server has open.
 

@@ -18,7 +18,13 @@ import numpy as np, sqlite_vec
 from usearch.index import Index
 
 DB   = os.environ.get('DB_PATH', '/home/bibman/bibman.db')
-IDX  = os.path.join(os.path.dirname(DB), 'bibman_768_i8.usearch')
+IDX  = os.path.join(os.path.dirname(DB), 'bibman_768_i8.usearch')   # the old shared index (before 31 Oct 2026)
+_LIST = os.path.join(os.path.dirname(DB), 'bibman_768_i8.libraries.json')
+if os.path.exists(_LIST):   # one index per library since 31 Oct 2026: check the largest one
+    import json
+    _libs = json.load(open(_LIST)).get('libraries', {})
+    if _libs:
+        IDX = os.path.join(os.path.dirname(DB), max(_libs.values(), key=lambda e: e.get('vectors', 0))['file'])
 DIM  = 768
 t0   = time.time()
 
