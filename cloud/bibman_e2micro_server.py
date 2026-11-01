@@ -30,6 +30,7 @@ Setup:
 
 import os
 import io
+import sys
 import re
 import json
 import uuid
@@ -194,6 +195,8 @@ def sweep_orphan_embeddings(conn) -> tuple:
 # The indexes are snapshots: they change only when the rebuild script runs, and the server loads them at startup.
 USEARCH_LIST_PATH = DB_PATH.parent / 'bibman_768_i8.libraries.json'   # written by bibman_rebuild_usearch.py
 USEARCH_INDEXES = {}      # library id -> {'index', 'method', 'built', 'name'}
+USEARCH_LIST_MTIME = None # when the list file was last read: a newer one (after a rebuild or the nightly sync) is
+                          # loaded before the next search, so no restart is needed
 # A library without an index file yet (e.g. created after the last rebuild) is compared directly against its own
 # stored embeddings, which is exact but gets slower as the library grows; above this many passages it is not tried,
 # and the dashboard says the library needs a rebuild instead.
@@ -213,6 +216,8 @@ def quantize_query(v, method: str):
 
 def _load_usearch_indexes():
     """Load every library's index (memory-mapped, so only the parts a search touches are read)."""
+    global USEARCH_INDEXES, USEARCH_LIST_MTIME
+    loaded = {}
     try:
         from usearch.index import Index
     except Exception as e:
@@ -221,6 +226,7 @@ def _load_usearch_indexes():
         log.warning(f'No per-library search indexes yet ({USEARCH_LIST_PATH.name} missing): run bibman_rebuild_usearch.py')
         return
     try:
+        USEARCH_LIST_MTIME = USEARCH_LIST_PATH.stat().st_mtime
         listing = json.loads(USEARCH_LIST_PATH.read_text()).get('libraries', {})
     except Exception as e:
         log.warning(f'{USEARCH_LIST_PATH.name} is unreadable ({e}); meaning-based search will compare libraries directly')
@@ -234,12 +240,38 @@ def _load_usearch_indexes():
             index = Index.restore(str(path), view=True)
             index.expansion_search = 8   # faster queries on an e2-micro (trades a little accuracy for speed)
             method = (entry.get('method') or 'A').upper()[:1]
-            USEARCH_INDEXES[lib_id] = {'index': index, 'method': method if method in 'ABC' else 'A',
-                                       'built': entry.get('built', ''), 'name': entry.get('name', lib_id)}
+            loaded[lib_id] = {'index': index, 'method': method if method in 'ABC' else 'A',
+                              'built': entry.get('built', ''), 'name': entry.get('name', lib_id)}
             log.info(f'USearch index loaded for {entry.get("name", lib_id)}: {index.size} vectors, method '
-                     f'{USEARCH_INDEXES[lib_id]["method"]}, built {entry.get("built", "?")}')
+                     f'{loaded[lib_id]["method"]}, built {entry.get("built", "?")}'
+                     f'{", synced " + entry["synced"] if entry.get("synced") else ""}')
         except Exception as e:
             log.warning(f'USearch index for {entry.get("name", lib_id)} could not be loaded: {e}')
+    USEARCH_INDEXES = loaded   # swapped in whole, so a search never sees a half-loaded set
+
+def refresh_usearch_indexes():
+    """Load the indexes again if the list file changed since they were loaded (a rebuild or the nightly sync)."""
+    try:
+        m = USEARCH_LIST_PATH.stat().st_mtime if USEARCH_LIST_PATH.exists() else None
+    except OSError:
+        return
+    if m != USEARCH_LIST_MTIME:
+        log.info('search index list changed: loading the indexes again')
+        _load_usearch_indexes()
+
+def start_index_sync():
+    """Start bibman_rebuild_usearch.py --sync in the background, at low priority, so the indexes take in the passages
+    embedded tonight and drop deleted or moved ones. Its output goes to bibman_usearch_sync.log next to the database.
+    The script refuses to run while another rebuild or sync is running."""
+    import subprocess
+    script = Path(__file__).resolve().parent / 'bibman_rebuild_usearch.py'
+    if not script.exists():
+        log.warning(f'index sync not started: {script} not found'); return
+    with open(DB_PATH.parent / 'bibman_usearch_sync.log', 'a') as out:
+        out.write(f'\n=== {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC: nightly sync ===\n'); out.flush()
+        subprocess.Popen(['nice', '-n', '19', sys.executable, str(script), '--sync'], stdout=out, stderr=subprocess.STDOUT,
+                         stdin=subprocess.DEVNULL, start_new_session=True, env=dict(os.environ, DB_PATH=str(DB_PATH)))
+    log.info('Cron: started the search-index sync (log: bibman_usearch_sync.log)')
 
 _load_usearch_indexes()
 if EXPORT_CREDENTIAL and len(EXPORT_CREDENTIAL) < 16:
@@ -1441,9 +1473,15 @@ def run_cron():
             except Exception as e:
                 log.error(f'Cron orphan sweep failed: {e}')
 
+            # ── Step 4: Bring the search indexes up to date (separate low-priority process) ──
+            try:
+                start_index_sync()
+            except Exception as e:
+                log.error(f'Cron: could not start the search-index sync: {e}')
+
             elapsed = time.time() - start
             log.info(f'=== GAS-triggered cron complete in {elapsed:.0f}s: {embedded} embeddings, {synonyms} synonym papers, '
-                     f'{sum(orphans)} leftover embeddings removed ===')
+                     f'{sum(orphans)} leftover embeddings removed; index sync started ===')
 
         finally:
             _CRON_RUNNING = False
@@ -2956,6 +2994,7 @@ def venn_search():
 
     ads_token, gemini_key = get_request_tokens()
     semantic_errors = set()   # plain-language reasons meaning-based search failed (shown in the dashboard)
+    if use_semantic: refresh_usearch_indexes()
     semantic_ready, why_not = semantic_available(conn, library_id) if use_semantic else (False, '')
     if why_not: semantic_errors.add(why_not)
     _direct_cache = {}        # a library without an index: its embeddings, read once per search

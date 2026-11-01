@@ -4,6 +4,8 @@ BibMan semantic-search index rebuild (one index per library)
 ============================================================
 Rebuilds the USearch indexes from the embeddings already stored in the database (no Gemini calls). Each library
 gets its own index file, so meaning-based search only ever looks at the current library's passages.
+--sync brings existing indexes up to date instead (adds new passages, removes deleted or moved ones) in minutes; the
+server runs it after each nightly job, so a full rebuild is only needed occasionally (every few months, to tidy up).
 
 Files, next to the database (named by the library's ID, so renaming a library changes nothing):
   bibman_768_i8.lib-<library id>.usearch        the library's index
@@ -31,7 +33,7 @@ Safe by design:
   * Each library's current index is kept as its .prev, so going back is one command (--rollback --library NAME).
     An existing .prev is never overwritten unless you pass --replace-prev. This is checked for every library
     before anything is built.
-  * It does NOT restart BibMan; it prints the command. The running server keeps the old indexes until then.
+  * BibMan notices new indexes by itself (it checks the list file before each search), so no restart is needed.
 
 Compression method (how each 768-dim float vector becomes int8), recorded per library in the list file so the
 server compresses search queries the same way:
@@ -46,10 +48,10 @@ is using BibMan or gooTeX; a small library takes seconds):
   sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --library Satellites
   sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --rollback --library Satellites
   sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --recheck --library Extragalactic
+  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --sync      # what the nightly job runs
   (add --replace-prev once you are happy with the current indexes; add --method A/B/C to choose compression)
-then: sudo systemctl restart bibman
 """
-import os, sys, json, time, sqlite3, argparse
+import os, sys, json, time, fcntl, sqlite3, argparse
 from pathlib import Path
 import numpy as np
 
@@ -61,6 +63,7 @@ ap.add_argument('--dry-run', action='store_true')
 ap.add_argument('--replace-prev', action='store_true', help='allow overwriting existing .prev backups')
 ap.add_argument('--rollback', action='store_true', help="swap a library's .prev index back in (needs --library)")
 ap.add_argument('--recheck', action='store_true', help="check a library's kept .failed index again and install it if it passes")
+ap.add_argument('--sync', action='store_true', help="bring existing indexes up to date (add new passages, remove gone ones)")
 args = ap.parse_args()
 
 DB_PATH = Path(os.environ.get('DB_PATH', '/home/bibman/bibman.db'))
@@ -68,6 +71,8 @@ D = DB_PATH.parent
 MANIFEST = D / 'bibman_768_i8.libraries.json'
 def index_path(lib_id: str) -> Path: return D / f'bibman_768_i8.lib-{lib_id}.usearch'
 def suffixed(p: Path, s: str) -> Path: return p.with_name(p.name + s)
+def keys_path(lib_id: str) -> Path: return D / f'bibman_768_i8.lib-{lib_id}.keys.npy'   # the index's passage IDs, so a
+                                                    # sync can see what changed without reading the whole index file
 def log(msg): print(time.strftime('%H:%M:%S'), msg, flush=True)
 def now_utc(): return time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
 
@@ -108,17 +113,27 @@ if args.rollback:
     if idx.exists(): idx.replace(tmp)
     prev.replace(idx)
     if tmp.exists(): tmp.replace(prev)
+    kp = keys_path(lib_id); kprev, kswap = suffixed(kp, '.prev'), suffixed(kp, '.swap')
+    if kp.exists(): kp.replace(kswap)
+    if kprev.exists(): kprev.replace(kp)
+    if kswap.exists(): kswap.replace(kprev)
     cur = {k: v for k, v in entry.items() if k != 'prev'}
     m['libraries'][lib_id] = dict(entry['prev'], name=name, file=idx.name, prev=cur if prev.exists() else None)
     write_manifest(m)
     log(f'rolled back {name}: {idx.name} is now the previous index ({entry["prev"].get("vectors", "?")} vectors, '
         f'method {entry["prev"].get("method", "?")}); the newer one is kept as {prev.name}')
-    log('load it with:  sudo systemctl restart bibman'); sys.exit(0)
+    log('BibMan loads it by itself before its next search (no restart needed)'); sys.exit(0)
 
 import sqlite_vec
 from usearch.index import Index
 con.enable_load_extension(True); sqlite_vec.load(con); con.enable_load_extension(False)
 t0 = time.time()
+if not args.dry_run:   # one rebuild or sync at a time (the nightly sync and a hand-started rebuild must not overlap)
+    _lock = open(D / 'bibman_768_i8.lock', 'w')
+    try:
+        fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit('STOP: another rebuild or sync of the search indexes is running; nothing changed')
 n_nokey = con.execute('SELECT COUNT(*) FROM vec_passages_rowids WHERE id NOT IN '
                       '(SELECT id FROM passages WHERE search_id IS NOT NULL)').fetchone()[0]
 log(f'database {DB_PATH}; method {args.method}; libraries: {", ".join(chosen)}')
@@ -126,7 +141,7 @@ if n_nokey:
     log(f'note: {n_nokey:,} embedded passages have no search ID and will be left out; '
         'run bibman_backfill_search_ids.py --apply first to include them')
 blocked = []
-for name in chosen:
+for name in ([] if args.sync else chosen):   # a sync keeps one backup per library and replaces it each time
     lib_id = libs[name]; idx = index_path(lib_id); prev = suffixed(idx, '.prev')
     n_all, n_key = con.execute('SELECT COUNT(*), COUNT(pa.search_id) FROM passages pa JOIN papers pp ON pp.id = pa.paper_id '
                                'WHERE pp.library_id = ?', (lib_id,)).fetchone()
@@ -144,7 +159,7 @@ CHECK_SAMPLE, CHECK_TOP10_MIN = 300, 0.97   # the check: of 300 passages spread 
                                            # (the October 2026 Extragalactic index scored 99%)
 SEED = 20261031                            # fixed, so a rebuild of the same data gives the same index
 
-def check_sample(lib_id: str, method: str) -> list:
+def check_sample(lib_id: str, method: str, CHECK_SAMPLE: int = CHECK_SAMPLE) -> list:
     """Up to CHECK_SAMPLE passages chosen at random from across the library: [(search_id, compressed vector)]."""
     import random
     rnd = random.Random(SEED); lo, hi = con.execute('SELECT MIN(rowid), MAX(rowid) FROM passages').fetchone()
@@ -185,13 +200,18 @@ def check_index(path: Path, expected: int, sample: list) -> tuple:
     return passed, (f'{size:,} vectors{"" if size == expected else f" (expected {expected:,})"}; sample of {n}: present {pct(present)}, '
                     f'itself first {pct(first)}, within 10 {pct(top10)} (needs {CHECK_TOP10_MIN:.0%}), within 50 {pct(top50)}')
 
-def install(name: str, lib_id: str, built: Path, vectors: int, method: str):
-    idx = index_path(lib_id); prev = suffixed(idx, '.prev')
+def install(name: str, lib_id: str, built: Path, vectors: int, method: str, synced: bool = False, keys=None):
+    idx = index_path(lib_id); prev = suffixed(idx, '.prev'); kp = keys_path(lib_id)
     m = read_manifest(); old = {k: v for k, v in (m['libraries'].get(lib_id) or {}).items() if k != 'prev'}
+    if keys is None:   # e.g. a re-checked .failed index: read its IDs from the file itself
+        ix = Index.restore(str(built), view=True); keys = np.array([int(k) for k in ix.keys], dtype=np.uint64); del ix
+    ktmp = suffixed(kp, '.tmp.npy'); np.save(ktmp, np.sort(np.asarray(keys, dtype=np.uint64)))
     if idx.exists(): idx.replace(prev)
-    built.replace(idx)
+    if kp.exists(): kp.replace(suffixed(kp, '.prev'))
+    built.replace(idx); ktmp.replace(kp)
     m['libraries'][lib_id] = {'name': name, 'file': idx.name, 'vectors': vectors, 'method': method,
-                              'built': now_utc(), 'prev': old if (old and prev.exists()) else None}
+                              'built': old.get('built', now_utc()) if synced else now_utc(),
+                              'synced': now_utc() if synced else None, 'prev': old if (old and prev.exists()) else None}
     write_manifest(m)
 
 def build(name: str, lib_id: str) -> str:
@@ -240,10 +260,10 @@ def build(name: str, lib_id: str) -> str:
         return f'{name}: no embedded passages yet, so no index built (the server compares such a library directly)'
     log(f'    {name}: all {read:,} read; adding them to the index in random order ...')
     index = Index(ndim=DIMS, dtype='i8', metric='cos', connectivity=16, expansion_add=128, expansion_search=8)
-    added = 0
+    added = 0; all_keys = []
     for b in range(NB):
         R = np.fromfile(bdir / f'b{b:02d}.bin', dtype=rec)
-        R = R[rng.permutation(len(R))]
+        R = R[rng.permutation(len(R))]; all_keys.append(R['k'].astype(np.uint64))
         for i in range(0, len(R), BATCH):
             index.add(R['k'][i:i + BATCH].astype(np.uint64), np.ascontiguousarray(R['v'][i:i + BATCH]), threads=1)
         added += len(R); (bdir / f'b{b:02d}.bin').unlink()
@@ -256,7 +276,7 @@ def build(name: str, lib_id: str) -> str:
         tmp.replace(failed)
         return (f'{name}: check FAILED: {summary}. Its current index is left untouched; the new one is kept as '
                 f'{failed.name} (re-check it with --recheck --library {name})')
-    install(name, lib_id, tmp, added, args.method)
+    install(name, lib_id, tmp, added, args.method, keys=np.concatenate(all_keys))
     return (f'{name}: installed {idx.name}: {added:,} vectors, {idx.stat().st_size / 2**20:.1f} MB, method {args.method}; '
             f'check passed: {summary}{f"; {no_emb:,} passage(s) without an embedding yet (left out)" if no_emb else ""}; '
             f'{time.time() - t1:.0f}s')
@@ -271,11 +291,89 @@ def recheck(name: str, lib_id: str) -> str:
     install(name, lib_id, failed, n, args.method)
     return f'{name}: re-check passed: {summary}; installed as {idx.name}'
 
+SYNC_SPREAD = 50   # a sync's check: the passages it added (up to 300) plus 50 already in the index, spread across it
+
+_embedded = None
+def embedded_ids() -> set:
+    """IDs of all passages that have an embedding (read once per run)."""
+    global _embedded
+    if _embedded is None: _embedded = {r[0] for r in con.execute('SELECT id FROM vec_passages_rowids')}
+    return _embedded
+
+def sync(name: str, lib_id: str) -> str:
+    """Bring a library's index up to date: add its passages that are not in the index yet (new papers, papers moved
+    in, re-extracted papers), in random order, and remove those that are no longer the library's (deleted, moved
+    out, replaced by a re-extraction). Afterwards the index holds exactly the library's embedded passages. A library
+    without an index gets a full build. The result is checked before it replaces the index, as for a rebuild."""
+    idx = index_path(lib_id); tmp, failed = suffixed(idx, '.tmp'), suffixed(idx, '.failed')
+    entry = read_manifest()['libraries'].get(lib_id)
+    if not idx.exists() or not entry:
+        log(f'    {name}: no index yet, so a full build')
+        return build(name, lib_id)
+    t1 = time.time(); method = entry.get('method') or 'C'
+    def lap(what, t=[time.time()]):   # how long each stage took, for the log
+        now = time.time(); log(f'    {name}: {what} ({now - t[0]:.0f}s)'); t[0] = now
+    emb = embedded_ids(); lap('read which passages have embeddings')
+    wanted = {sid: pid for pid, sid in con.execute('SELECT pa.id, pa.search_id FROM passages pa JOIN papers pp ON pp.id = pa.paper_id '
+                                                   'WHERE pp.library_id = ? AND pa.search_id IS NOT NULL', (lib_id,)) if pid in emb}
+    lap(f'read the library\'s {len(wanted):,} embedded passages')
+    kp = keys_path(lib_id); have = None
+    if kp.exists():
+        k = np.load(kp)
+        if len(k) == entry.get('vectors'): have = {int(x) for x in k}
+    if have is None:   # no (or an outdated) ID list: read the IDs from the index file itself (slow, once)
+        ix = Index.restore(str(idx), view=True); have = {int(x) for x in ix.keys}; del ix
+        lap(f"read the index's {len(have):,} passage IDs from the index file (no ID list yet)")
+    else:
+        lap(f"read the index's {len(have):,} passage IDs")
+    to_add = [sid for sid in wanted if sid not in have]
+    to_remove = [k for k in have if k not in wanted]
+    rng = np.random.default_rng(SEED); rng.shuffle(to_add); skipped = 0; new_k, new_v = [], []
+    for i in range(0, len(to_add), 500):   # the new passages' embeddings, before touching the index
+        keys = to_add[i:i + 500]; pids = [wanted[k] for k in keys]
+        blobs = dict(con.execute(f'SELECT passage_id, embedding FROM vec_passages WHERE passage_id IN ({",".join("?" * len(pids))})', pids).fetchall())
+        got = [(k, blobs[wanted[k]]) for k in keys if blobs.get(wanted[k])]
+        skipped += len(keys) - len(got)
+        if got:
+            new_k += [k for k, _ in got]
+            new_v.append(compress(np.stack([np.frombuffer(b, dtype=np.float32)[:DIMS] for _, b in got]).astype(np.float32), method))
+    note = f'; {skipped:,} without embedding data yet (left out)' if skipped else ''
+    if not new_k and not to_remove:
+        if kp.exists() and len(have) == entry.get('vectors'):
+            return f'{name}: already up to date ({len(have):,} passages{note}); {time.time() - t1:.0f}s'
+        install_keys_only = np.array(sorted(have), dtype=np.uint64)   # first sync after this change: keep the ID list from now on
+        ktmp = suffixed(kp, '.tmp.npy'); np.save(ktmp, install_keys_only); ktmp.replace(kp)
+        m = read_manifest(); m['libraries'][lib_id]['vectors'] = len(have); write_manifest(m)
+        return f'{name}: already up to date ({len(have):,} passages{note}); ID list written; {time.time() - t1:.0f}s'
+    lap(f'{len(new_k):,} to add, {len(to_remove):,} to remove')
+    index = Index.restore(str(idx))   # into memory, so it can be changed (a rebuild needs as much)
+    lap('loaded the index')
+    if to_remove: index.remove(np.array(to_remove, dtype=np.uint64))
+    V = np.concatenate(new_v) if new_v else np.zeros((0, DIMS), np.int8)
+    for i in range(0, len(new_k), 500):
+        index.add(np.array(new_k[i:i + 500], dtype=np.uint64), V[i:i + 500], threads=1)
+    sample = [(new_k[j], V[j]) for j in range(min(len(new_k), CHECK_SAMPLE))]
+    expected = index.size
+    keys_now = np.array(sorted((have - set(to_remove)) | set(new_k)), dtype=np.uint64)
+    del have
+    index.save(str(tmp)); del index
+    lap('changed and saved the index')
+    passed, summary = check_index(tmp, expected, sample + check_sample(lib_id, method, SYNC_SPREAD))
+    lap('checked it')
+    change = f'{len(new_k):,} added, {len(to_remove):,} removed'
+    if not passed or expected != len(keys_now):
+        tmp.replace(failed)
+        return (f'{name}: sync check FAILED ({change}; {summary}{"" if expected == len(keys_now) else f"; index holds {expected:,}, expected {len(keys_now):,}"}). '
+                f'Its current index is left untouched; the new one is kept as {failed.name}')
+    install(name, lib_id, tmp, expected, method, synced=True, keys=keys_now)
+    return f'{name}: synced: {change}, now {expected:,} passages{note}; check passed: {summary}; {time.time() - t1:.0f}s'
+
 results = []
 for name in sorted(chosen, key=lambda n: n == 'Extragalactic'):  # small ones first: done in seconds, so you see early that all is well
-    log(f'{"re-checking" if args.recheck else "building"} {name} ...')
-    results.append((recheck if args.recheck else build)(name, libs[name])); log('  ' + results[-1])
+    action, verb = (recheck, 're-checking') if args.recheck else (sync, 'syncing') if args.sync else (build, 'building')
+    log(f'{verb} {name} ...')
+    results.append(action(name, libs[name])); log('  ' + results[-1])
 con.close()
 log(f'finished in {time.time() - t0:.0f}s:')
 for r in results: log('  ' + r)
-log('BibMan still uses the old index until restarted:  sudo systemctl restart bibman')
+log('BibMan loads the new indexes by itself before its next search (no restart needed)')

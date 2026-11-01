@@ -1,5 +1,13 @@
 # Changelog
 
+## 1 November 2026: search indexes kept up to date every night
+
+- **New papers reach meaning-based search the morning after they are added.** After the nightly processing has embedded new passages, the server starts `bibman_rebuild_usearch.py --sync`, which brings each library's index up to date: it adds passages that are new, re-extracted or moved in (in random order) and removes those deleted, replaced or moved out, so each index holds exactly its library's embedded passages. It is checked before it replaces the index (the passages it added plus 50 already there must come back within the first 10, at least 97% of them), keeps the previous index as `.prev`, and keeps a result that fails as `.failed`. Log: `bibman_usearch_sync.log` next to the database.
+- **No restart after a rebuild, sync or rollback:** the server checks the index list before each meaning-based search and loads changed indexes by itself.
+- Only one rebuild or sync runs at a time (a lock file next to the database).
+- Each index keeps a small list of its passage IDs (`.keys.npy`), so a sync with nothing to do finishes in minutes without loading the index. The sync log shows how long each stage took.
+- A full rebuild is now an occasional tidy-up (every few months) rather than a monthly chore.
+
 ## 31 October 2026: meaning-based search per library; no leftover embeddings
 
 - **Meaning-based search stays in the current library.** Each library now has its own search index (`bibman_768_i8.lib-<library id>.usearch`, listed in `bibman_768_i8.libraries.json`), and a search looks only at the current library's. Before, there was one index for all libraries: its nearest matches could come from any library, so other libraries' papers showed up in results and took up places a relevant passage of this library could have had. Keyword and note searches were already limited to the library.
