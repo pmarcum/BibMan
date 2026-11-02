@@ -6,6 +6,7 @@
 - **Tag pickers only add and remove tags.** The pickers behind 🏷 Tag (whole paper) and a note's 🏷 say what the ticks mean ("✓ = already on this paper: click it to take it off, only here") and no longer offer rename, share/private or delete, which change a label everywhere. Those stay in the Tags list in the left sidebar, so a slip while untagging one note can't delete a label from the whole library.
 - **Deleting a label everywhere needs its name typed.** The ✕ in the sidebar Tags list opens a box saying the label will be taken off every paper and every note that has it, in all libraries, and can't be undone; *Delete everywhere* only works once the label's name has been typed (capitals and spaces at the ends don't matter). The hover text on ✎ and ✕ there now says they act everywhere.
 - **Paper tags and note tags shown apart.** The tag strip above the annotations in paper view has two lines: *Paper:* for tags on the paper as a whole, and *In notes:* for tags on highlights and notes, each label once with the number of notes that have it (e.g. *TCAN26 ×2*). Hovering shows who applied it.
+- **The ✕ on a note says what it deletes:** *Delete this highlight and its note*, or *Delete this paper note* (it said only *Delete*), and so does the question before deleting.
 - Dashboard only (`Index.html`): no server or Apps Script change.
 
 ## 1 November 2026: search indexes kept up to date every night

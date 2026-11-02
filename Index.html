@@ -2038,7 +2038,7 @@ function _renderAnnotations(anns) {
     editBtn.addEventListener('click', e => { e.stopPropagation(); editAnn(a.id, noteText); });
     const delBtn = document.createElement('button');
     delBtn.className = 'ann-del';
-    delBtn.title = 'Delete';
+    delBtn.title = isPaperNote ? 'Delete this paper note' : 'Delete this highlight and its note';
     delBtn.textContent = '×';
     delBtn.addEventListener('click', e => { e.stopPropagation(); delAnn(a.id); });
     btns.appendChild(kpBtn);
@@ -2219,7 +2219,9 @@ async function submitAnn() {
   } catch(e) { notify(e.message,'error'); }
 }
 async function delAnn(id) {
-  if (!confirm('Delete?')) return;
+  const a = (_current?.annotations || []).find(x => x.id === id);
+  const what = a?.annotation_type === 'paper' ? 'this paper note' : 'this highlight and its note';
+  if (!confirm(`Delete ${what}? This can't be undone.`)) return;
   try {
     await gas('deleteAnnotation', id);
     // Remove from local cache
