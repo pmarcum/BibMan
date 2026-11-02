@@ -30,7 +30,7 @@ curl -s https://YOUR-SUBDOMAIN.duckdns.org/health
 
 | Job | Runs from | When | What it does |
 |---|---|---|---|
-| Nightly processing (`runNightlyCron`) | Apps Script time trigger in the **Frontend** project (created once by `setupCronTrigger`) | Daily, about 5 am Pacific | Calls `POST /api/cron/run` with the Gemini key; the server then embeds new passages, generates synonym pairs, and removes embeddings left behind by deleted passages or notes, in the background, in small batches, and finally starts the **search-index sync** (below) |
+| Nightly processing (`runNightlyCron`) | Apps Script time trigger in the **Frontend** project (created once by `setupCronTrigger`) | Daily, about 5 am Pacific | Calls `POST /api/cron/run` with the Gemini key; the server then embeds new passages, generates synonym pairs, and removes embeddings left behind by deleted passages or notes and tags and @mentions left behind by deleted notes or papers, in the background, in small batches, and finally starts the **search-index sync** (below) |
 | Search-index sync (`bibman_rebuild_usearch.py --sync`) | Started by the nightly processing, as a separate low-priority process | Daily, right after the nightly processing | Brings each library's index up to date: adds passages that are new or moved in, removes deleted or moved-out ones. Log: `/home/bibman/bibman_usearch_sync.log` |
 | Search-index rebuild | **Not scheduled**: run by hand (see "The semantic-search index") | Every few months, or if a sync keeps failing its check | Rebuilds the usearch files (one per library) from the stored embeddings, from scratch |
 
@@ -67,8 +67,10 @@ Since 29 October 2026 these marks are personal, like tags. Each person's marks o
 Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default. Who tagged what stays personal (`paper_tags` records the person).
 - **A shared label** appears for everyone (sidebar, tag picker, Venn filters), whether Just me is on or off, and anyone can apply it to papers and notes. **Just me** filters by your own tagging; **Everyone** by anyone's. Removing a tag removes only yours.
 - **A private label** (`is_private = 1`, 🔒) is seen and applied only by its creator, in every view including Everyone. Notes tagged with it stay visible to others as usual; only the tag is hidden. Private means hidden in BibMan's screens: a server administrator can still read it in the database.
-- New labels are shared unless *Private (only you)* is ticked. The creator can switch a label later (👥 / 🔒 in the tag picker). Making it private is refused if others have used it.
-- Only the creator can rename, recolor or delete a label. Deleting is refused if others have used it (the message names who, and on how many papers).
+- New labels are shared unless *Private (only you)* is ticked. The creator can switch a label later (👥 / 🔒 in the Tags list in the left sidebar). Making it private is refused if others have used it.
+- Only the creator can rename or delete a label, in the Tags list in the left sidebar (the tag pickers only add and remove tags). Deleting asks for the label's name to be typed, and is refused if others have used it (the message names who, and on how many papers).
+- Each person can put a label once on a paper as a whole and once on each of its notes (unique index `ux_paper_tags_place`). Databases made before 2 November 2026 allowed it only once per paper, paper and notes together, and silently ignored further uses; `cloud/bibman_fix_tags.py` (dry run by default, `--apply`) changes the rule, and the server does the same at start if it finds the old one. Either keeps the old table as `paper_tags_old_rule_<date>`: drop it a week or so later, once all is well (`DROP TABLE paper_tags_old_rule_...;`).
+- Deleting a note removes its tags and @mentions; deleting a paper, those of the paper and its notes.
 - At most 8 labels per person (shared and private together). A new or renamed label may not have the same name, ignoring capitals, as a label you can already see. A colleague can still create a shared label with the same name as your private one, since they can't see it.
 - Labels are not tied to a library: a label shows in every library.
 - Labels that existed before the change became shared (the `is_private` column is added at server start, defaulting to 0).

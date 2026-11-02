@@ -189,6 +189,82 @@ def sweep_orphan_embeddings(conn) -> tuple:
             removed.append(0)
     return tuple(removed)
 
+# ── Tags: one label once per person on the paper itself and once on each of its notes ────────────────────────────
+# Databases made before note tagging have UNIQUE(paper_id, user_id, label_id) on paper_tags, so a label could be used
+# only once per paper per person, paper and notes together, and further uses were silently ignored. The rule is now a
+# unique index that includes the note (none = the paper as a whole); fix_paper_tags_rule() rebuilds an old table once.
+# The same function is in bibman_fix_tags.py (the one-time repair script, 2 Nov 2026); keep the two alike.
+PAPER_TAGS_TABLE = '''CREATE TABLE {name} (
+    id            TEXT PRIMARY KEY,
+    paper_id      TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    label_id      TEXT NOT NULL,
+    annotation_id TEXT DEFAULT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(paper_id) REFERENCES papers(id) ON DELETE CASCADE,
+    FOREIGN KEY(label_id) REFERENCES user_tag_labels(id) ON DELETE CASCADE)'''
+PAPER_TAGS_INDEX = ("CREATE UNIQUE INDEX IF NOT EXISTS ux_paper_tags_place "
+                    "ON paper_tags(paper_id, user_id, label_id, IFNULL(annotation_id, ''))")
+_PAPER_TAGS_CHECKED = False
+
+def paper_tags_has_old_rule(conn) -> bool:
+    r = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='paper_tags'").fetchone()
+    return bool(r and r[0]) and 'unique(paper_id,user_id,label_id)' in re.sub(r'\s+', '', r[0]).lower()
+
+def fix_paper_tags_rule(conn):
+    """Give paper_tags the per-note rule. An old table is rebuilt with every row kept, and kept itself, renamed
+    paper_tags_old_rule_<date>, as a backup. Returns the number of tags copied, or None if nothing needed doing."""
+    if not paper_tags_has_old_rule(conn):
+        conn.execute(PAPER_TAGS_INDEX)
+        conn.commit()
+        return None
+    backup = 'paper_tags_old_rule_' + datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+    conn.commit()
+    conn.execute('PRAGMA foreign_keys = OFF')   # the documented way to rebuild a table; checked again before COMMIT
+    try:
+        conn.execute('BEGIN IMMEDIATE')
+        try:
+            if not paper_tags_has_old_rule(conn):   # another process fixed it meanwhile
+                conn.execute('ROLLBACK')
+                return None
+            conn.execute('DROP TABLE IF EXISTS paper_tags_new')
+            conn.execute(PAPER_TAGS_TABLE.format(name='paper_tags_new'))
+            conn.execute('INSERT INTO paper_tags_new (id, paper_id, user_id, label_id, annotation_id, created_at) '
+                         'SELECT id, paper_id, user_id, label_id, annotation_id, created_at FROM paper_tags')
+            n_old = conn.execute('SELECT COUNT(*) FROM paper_tags').fetchone()[0]
+            n_new = conn.execute('SELECT COUNT(*) FROM paper_tags_new').fetchone()[0]
+            if n_old != n_new:
+                raise RuntimeError(f'copied {n_new} of {n_old} tags')
+            conn.execute(f'ALTER TABLE paper_tags RENAME TO {backup}')
+            conn.execute('ALTER TABLE paper_tags_new RENAME TO paper_tags')
+            conn.execute(PAPER_TAGS_INDEX)
+            if conn.execute('PRAGMA foreign_key_check(paper_tags)').fetchone():
+                raise RuntimeError('a tag refers to a missing paper or label')
+            conn.execute('COMMIT')
+        except Exception:
+            conn.execute('ROLLBACK')
+            raise
+    finally:
+        conn.execute('PRAGMA foreign_keys = ON')
+    log.info(f'tag table: rule changed to one label per note; {n_new} tags kept; old table kept as {backup}')
+    return n_new
+
+def sweep_leftover_tags_mentions(conn) -> tuple:
+    """Remove tags and @mentions whose note or paper no longer exists. Returns (tags, mentions) removed. Run nightly as
+    a safety net: deleting a note or paper already removes its own."""
+    removed = []
+    for table in ('paper_tags', 'mentions'):
+        try:
+            n = conn.execute(f"DELETE FROM {table} WHERE (annotation_id IS NOT NULL AND annotation_id != '' AND "
+                             f"annotation_id NOT IN (SELECT id FROM annotations)) OR paper_id NOT IN (SELECT id FROM papers)"
+                             ).rowcount
+            conn.commit()
+            removed.append(n)
+        except Exception as e:
+            log.warning(f'leftover sweep of {table} failed: {e}')
+            removed.append(0)
+    return tuple(removed)
+
 # ── USearch HNSW indexes: one per library (loaded once at startup) ──────────────
 # bibman_rebuild_usearch.py writes one index file per library and a list file describing them. Meaning-based search
 # only ever looks at the current library's index, so passages of other libraries can never take up its places.
@@ -593,19 +669,7 @@ def _ensure_columns(conn):
 
     # paper_tags table — tags applied to papers (and optionally annotations) by users
     try:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS paper_tags (
-                id            TEXT PRIMARY KEY,
-                paper_id      TEXT NOT NULL,
-                user_id       TEXT NOT NULL,
-                label_id      TEXT NOT NULL,
-                annotation_id TEXT DEFAULT NULL,
-                created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY(paper_id) REFERENCES papers(id) ON DELETE CASCADE,
-                FOREIGN KEY(label_id) REFERENCES user_tag_labels(id) ON DELETE CASCADE,
-                UNIQUE(paper_id, user_id, label_id, annotation_id)
-            )
-        ''')
+        conn.execute(PAPER_TAGS_TABLE.format(name='IF NOT EXISTS paper_tags'))
         conn.commit()
     except Exception:
         pass
@@ -615,6 +679,14 @@ def _ensure_columns(conn):
         conn.commit()
     except Exception:
         pass
+    # Once per server process: databases made before note tagging still have the old one-label-per-paper rule
+    global _PAPER_TAGS_CHECKED
+    if not _PAPER_TAGS_CHECKED:
+        try:
+            fix_paper_tags_rule(conn)
+            _PAPER_TAGS_CHECKED = True
+        except Exception as e:
+            log.warning(f'tag table check failed: {e} (tagging several notes of a paper with one label may not work)')
 
 # ── Text processing ───────────────────────────────────────────────────────────
 _NORM_MAP = {
@@ -1472,6 +1544,13 @@ def run_cron():
                 log.info(f'Cron: removed leftover embeddings: {orphans[0]} of passages, {orphans[1]} of notes')
             except Exception as e:
                 log.error(f'Cron orphan sweep failed: {e}')
+            try:
+                conn = get_db_connection()
+                left = sweep_leftover_tags_mentions(conn)
+                conn.close()
+                log.info(f'Cron: removed leftover tags and mentions of deleted notes or papers: {left[0]} tags, {left[1]} mentions')
+            except Exception as e:
+                log.error(f'Cron tag/mention sweep failed: {e}')
 
             # ── Step 4: Bring the search indexes up to date (separate low-priority process) ──
             try:
@@ -2213,6 +2292,8 @@ def delete_paper(paper_id):
     conn.execute('DELETE FROM annotation_flags WHERE annotation_id IN (SELECT id FROM annotations WHERE paper_id=?)',
                  (paper_id,))
     conn.execute('DELETE FROM paper_flags WHERE paper_id=?', (paper_id,))
+    conn.execute('DELETE FROM paper_tags WHERE paper_id=?', (paper_id,))   # also removed by the foreign keys; explicit
+    conn.execute('DELETE FROM mentions WHERE paper_id=?', (paper_id,))
     delete_note_search_entries(conn, paper_id, 'delete paper')
     conn.execute('DELETE FROM annotations WHERE paper_id=?', (paper_id,))
     conn.execute('DELETE FROM papers WHERE id=?', (paper_id,))
@@ -2772,6 +2853,8 @@ def update_annotation(ann_id):
 def delete_annotation(ann_id):
     conn = get_db_connection()
     conn.execute('DELETE FROM annotation_flags WHERE annotation_id=?', (ann_id,))
+    conn.execute('DELETE FROM paper_tags WHERE annotation_id=?', (ann_id,))   # its tags and @mentions go with it
+    conn.execute('DELETE FROM mentions WHERE annotation_id=?', (ann_id,))
     conn.execute('DELETE FROM annotations WHERE id=?', (ann_id,))
     try:
         conn.execute('DELETE FROM annotations_fts WHERE annotation_id=?', (ann_id,))
@@ -4506,15 +4589,17 @@ def add_paper_tag(paper_id):
         return err('Label not found', 404)
     tag_id = str(uuid.uuid4())
     try:
-        conn.execute(
+        added = conn.execute(
             'INSERT OR IGNORE INTO paper_tags (id,paper_id,user_id,label_id,annotation_id) VALUES (?,?,?,?,?)',
             (tag_id, paper_id, user_id, label_id, annotation_id)
-        )
+        ).rowcount
         conn.commit()
     except Exception as e:
         conn.close()
         return err(str(e))
     conn.close()
+    if not added:   # this person already has this label on this note (or on the paper itself): nothing to add
+        return jsonify({'ok': True, 'already': True})
     return jsonify({'ok': True, 'tag_id': tag_id})
 
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2 November 2026: the same label on several notes of a paper
+
+- **Fixed: a label could be used only once per paper.** Databases made before note tagging had the rule "one person, one label, once per paper", counting the paper and all its notes together, so tagging a second highlight with a label already on another note (or on the paper) was silently ignored: the tick showed, then was gone. The rule is now once per person on the paper as a whole and once on each note. `cloud/bibman_fix_tags.py` changes it on an existing database, keeping every tag and the old table (`paper_tags_old_rule_<date>`) as a backup; the server also changes it at start if it finds the old rule, and `cloud/schema.sql` has the new one. The server now answers "already there" instead of pretending to add a tag that is already there.
+- **Deleting a note removes its tags and @mentions** (they were left behind, pointing at a note that no longer existed, making the *In notes* counts too high and letting the paper match a tag filter); deleting a paper removes its mentions too. The repair script removes those already left behind, after writing them to a backup TSV, and the nightly processing removes any that appear later.
+- Server (`bibman_e2micro_server.py`) and a one-time script; no dashboard or Apps Script change.
+
 ## 1 November 2026: highlighting and tagging made clearer and safer
 
 - **Press H to highlight** the text selected in a PDF (it was Alt+A, "annotate", which also never worked on a Mac). H only acts while text is selected in the PDF and you are not typing in a box, and as a plain letter it clashes with no browser shortcut on Windows or Mac. The box that opens is titled *Highlight this passage*: an optional note and **Save highlight** (the button was called *Bookmark*). It says that, once saved, the highlight is tagged (🏷) or marked 🎯 Key Point, 📌 Pinned or 🔄 Follow-up with the buttons on its note in the Annotations list. (Tags are not offered in the box itself: the list of labels could get long, and the marks are not labels.)

@@ -226,15 +226,16 @@ CREATE TABLE user_tag_labels (
             );
 
 CREATE TABLE paper_tags (
-                id         TEXT PRIMARY KEY,
-                paper_id   TEXT NOT NULL,
-                user_id    TEXT NOT NULL,
-                label_id   TEXT NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP, annotation_id TEXT DEFAULT NULL,
-                FOREIGN KEY(paper_id) REFERENCES papers(id) ON DELETE CASCADE,
-                FOREIGN KEY(label_id) REFERENCES user_tag_labels(id) ON DELETE CASCADE,
-                UNIQUE(paper_id, user_id, label_id)
-            );
+    id            TEXT PRIMARY KEY,
+    paper_id      TEXT NOT NULL,
+    user_id       TEXT NOT NULL,
+    label_id      TEXT NOT NULL,
+    annotation_id TEXT DEFAULT NULL,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(paper_id) REFERENCES papers(id) ON DELETE CASCADE,
+    FOREIGN KEY(label_id) REFERENCES user_tag_labels(id) ON DELETE CASCADE);
+-- a label once per person on the paper itself (no note) and once on each of its notes
+CREATE UNIQUE INDEX ux_paper_tags_place ON paper_tags(paper_id, user_id, label_id, IFNULL(annotation_id, ''));
 
 CREATE INDEX idx_search_id ON passages(search_id);
 
