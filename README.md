@@ -25,7 +25,7 @@ There are three ways to read this repository:
 
 ## Getting access
 
-BibMan has no sign-up page. Your group's BibMan administrator adds your Google account email to the group's access list and sends you the **dashboard link** (a `script.google.com/macros/s/…/exec` address). Open it while signed in to that Google account. The first time, Google asks you to authorize BibMan; accept, and the dashboard loads.
+BibMan has no sign-up page. Your group's BibMan administrator sends you the **dashboard link** (a `script.google.com/macros/s/…/exec` address) and the group's **access code**. Open the link while signed in to your Google account. The first time, Google asks you to authorize BibMan; accept. BibMan then asks for the access code once (or it is already in the link, as `?access=…`), and the dashboard loads. If the administrator changes the code later, BibMan asks you once for the new one.
 
 If you see **Access Denied**, the email you are signed in with is not on the list. Check which Google account is active (top-right of any Google page) or ask your administrator.
 

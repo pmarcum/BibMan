@@ -19,7 +19,9 @@
  *   exportFolderId: string   // Drive folder ID for .bib exports (optional)
  *   cfWorkerUrl:    string   // Cloudflare Worker URL
  *   captureUrl:     string   // CAPTURE_WEBAPP_URL for bookmarklet
- *   accessSheetId:  string   // Spreadsheet ID containing allowed_users tab
+ *   accessCode:     string   // BIBMAN_ACCESS_CODE: the dashboard's access code (Core 9; replaces the access sheet)
+ *   adminEmails:    string   // ADMIN_EMAILS: who sees the Admin menu, emails separated by commas (Core 9)
+ *   coreMembers:    string   // CORE_MEMBERS: people who never need the access code, emails separated by commas
  *   dashUrl:        string   // Dashboard URL for bookmarklet substitution
  * }
  *
@@ -39,7 +41,9 @@
  *       exportFolderId:p.getProperty('EXPORT_FOLDER_ID')    || '',
  *       cfWorkerUrl:   p.getProperty('CF_WORKER_URL')       || '',
  *       captureUrl:    p.getProperty('CAPTURE_WEBAPP_URL')  || '',
- *       accessSheetId: p.getProperty('ACCESS_SHEET_ID')     || '',
+ *       accessCode:    p.getProperty('BIBMAN_ACCESS_CODE')  || '',
+ *       adminEmails:   p.getProperty('ADMIN_EMAILS')        || '',
+ *       coreMembers:   p.getProperty('CORE_MEMBERS')        || '',
  *       dashUrl:       p.getProperty('BIBMAN_DASHBOARD_URL')
  *                        || ScriptApp.getService().getUrl(),
  *     };
@@ -70,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 8;
+const BIBMAN_CORE_LIBRARY_VERSION = 9;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -191,8 +195,6 @@ function resolveConfig(config) {
 function getClientConfig(config) {
   const resolved = resolveConfig(config);
   const email    = Session.getActiveUser().getEmail();
-  const users    = getAllowedUsers(config);
-  const me       = users.find(u => u.email === email.toLowerCase());
   const updates  = _checkForUpdates(
     config.frontendThinClientVersion  || 1,
     config.bookmarkletCaptureVersion  || 1,
@@ -204,7 +206,7 @@ function getClientConfig(config) {
     // geminiKey is no longer sent to the browser (Core 4): Venn Search runs server-side through vennSearch().
     currentUser:                       email ? email.split('@')[0] : '',
     currentUserEmail:                  email || '',
-    isAdmin:                           me ? me.is_admin : false,
+    isAdmin:                           _isAdmin_(config, email),
     coreLibraryVersion:                config.linkedCoreVersion || BIBMAN_CORE_LIBRARY_VERSION,
     frontendThinClientVersion:         config.frontendThinClientVersion || 1,
     bookmarkletCaptureVersion:         config.bookmarkletCaptureVersion || 1,
@@ -236,33 +238,29 @@ function getClientConfig(config) {
  * Adding a new API function only requires adding it here — thin client never changes.
  */
 /**
- * _requireAllowedUser_: every dashboard call must come from someone on the access list.
- * doGet already checks the list when the page loads, but the functions behind the page are
- * callable directly by anyone who can open the web app, so dispatch() checks again.
- * A successful check is remembered for 5 minutes per user (removing someone from the
- * sheet therefore takes up to 5 minutes to take effect). Keyed by access-sheet ID so
- * groups that share this library never share a cached answer.
+ * _requireAccess_: every dashboard call must come from someone signed in to Google who has entered the current
+ * access code. doGet checks when the page loads, but the functions behind the page are callable directly by anyone
+ * who can open the web app, so dispatch() checks again, on every call: changing the code takes effect at once.
  */
-function _requireAllowedUser_(config) {
-  const email = (Session.getActiveUser().getEmail() || '').trim().toLowerCase();
+function _requireAccess_(config) {
+  const email = (Session.getActiveUser().getEmail() || '').trim();
   if (!email) throw new Error('BibMan: you are not signed in to a Google account.');
-  const key = 'bm_allowed_' + (config.accessSheetId || 'none');
-  let cache = null;
-  try { cache = CacheService.getUserCache(); if (cache && cache.get(key) === email) return; } catch (e) { cache = null; }
-  if (!getAllowedUsers(config).some(u => u.email === email)) {
-    throw new Error('BibMan: access denied for ' + email + ' (or the access list could not be read; reload to retry).');
-  }
-  try { if (cache) cache.put(key, email, 300); } catch (e) {}
+  if (_isCoreMember_(config, email)) return;
+  if (!_accessCode_(config)) throw new Error('BibMan: no access code has been set up yet (Script Property BIBMAN_ACCESS_CODE).');
+  if (!_hasAccess_(config)) throw new Error('BibMan: the access code has changed, or has not been entered. Reload BibMan to enter it.');
 }
 
 function dispatch(config, fn, ...args) {
-  _requireAllowedUser_(config);
+  // The one call allowed before the access code is entered: checking a typed code (from the access-code page)
+  if (fn === 'enterAccessCode') {
+    if (!(Session.getActiveUser().getEmail() || '').trim()) throw new Error('BibMan: you are not signed in to a Google account.');
+    return { ok: _rememberAccessCode_(config, args[0]) };
+  }
+  _requireAccess_(config);
   const table = {
     // Config / user
     getClientConfig:       () => getClientConfig(config),
     getCfWorkerUrl:        () => getCfWorkerUrl(config),
-    // Access control
-    getAllowedUsers:        () => getAllowedUsers(config),
     // Libraries
     getLibraries:          () => getLibraries(config),
     getCurrentLibrary:     () => getCurrentLibrary(config),
@@ -357,15 +355,9 @@ function dispatch(config, fn, ...args) {
  * get the latest UI without redeploying their thin client.
  */
 function doGet(config, e) {
-  const email   = Session.getActiveUser().getEmail();
-  const users   = getAllowedUsers(config);
-  const allowed = users.map(u => u.email);
-  if (!allowed.includes(email.toLowerCase())) {
-    return HtmlService.createHtmlOutput(
-      '<h3 style="font-family:monospace;color:#f77e7e">Access denied.</h3>' +
-      '<p style="font-family:monospace">Your account (' + email + ') is not authorized for BibMan.</p>'
-    ).setTitle('BibMan — Access Denied');
-  }
+  const gate = dashboardGate(config, (e && e.parameter) || {});
+  if (gate) return HtmlService.createHtmlOutput(gate).setTitle('BibMan — access code')
+                     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   // Fetch Index.html from GitHub so UI updates don't require thin-client redeployment.
   // Falls back to a bundled minimal page if GitHub is unreachable.
   let htmlContent;
@@ -496,26 +488,92 @@ function apiCall(config, method, path, body, params) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── 6. ACCESS CONTROL ─────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
-function getAllowedUsers(config) {
-  try {
-    const sheetId = config.accessSheetId || '';
-    if (!sheetId) return [];
-    const ss  = SpreadsheetApp.openById(sheetId);
-    const tab = ss.getSheetByName('allowed_users');
-    if (!tab) return [];
-    const data = tab.getDataRange().getValues();
-    return data.slice(1)
-      .filter(row => row[0] && row[1])
-      .map(row => ({
-        email:    row[0].toString().trim().toLowerCase(),
-        name:     row[1].toString().trim(),
-        is_admin: row[3] === true || row[3].toString().toLowerCase() === 'true',
-      }));
-  } catch(err) {
-    Logger.log('BibManCore.getAllowedUsers error: ' + err.message);
-    return [];
-  }
+// Since Core 9 (2 Nov 2026) the dashboard is open to anyone signed in to Google who has the link AND has entered
+// the access code, set in the Frontend project's Script Property BIBMAN_ACCESS_CODE (no access sheet any more).
+// The code is entered once per person (in the link as ?access=CODE, or in the box BibMan shows) and remembered for
+// that person, as a fingerprint (SHA-256), never as the code itself, until the code is changed; then everyone is
+// asked once for the new one. Capitals count; spaces at either end are ignored. With no code set, nobody gets in.
+// Admins (who see the Admin menu) are listed in the Script Property ADMIN_EMAILS. Core members, listed in CORE_MEMBERS,
+// and admins never need the code: they are let in by their Google email (checked on every call, so removing someone
+// from the list takes effect at once). Emails are compared ignoring capitals; separate them with commas.
+// The bookmarklet and gooTeX don't use the code: the bookmarklet carries GAS_CREDENTIAL, gooTeX its own
+// read-only EXPORT_CREDENTIAL (see MAINTENANCE.md, "Adding and removing people").
+function _accessCode_(config) { return (config.accessCode || '').trim(); }
+function _sha256_(text) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, text, Utilities.Charset.UTF_8));
 }
+// One remembered entry per person and dashboard: groups that share this library never share an answer.
+function _accessKey_(config) { return 'bm_access_' + _sha256_(config.dashUrl || 'dashboard').replace(/[^A-Za-z0-9]/g, '').slice(0, 16); }
+function _accessMark_(config) { return _sha256_('bibman-access\n' + (config.dashUrl || '') + '\n' + _accessCode_(config)); }
+function _hasAccess_(config) {
+  if (!_accessCode_(config)) return false;
+  let saved = '';
+  try { saved = PropertiesService.getUserProperties().getProperty(_accessKey_(config)) || ''; } catch (e) { saved = ''; }
+  return saved === _accessMark_(config);
+}
+function _rememberAccessCode_(config, typed) {
+  const code = _accessCode_(config);
+  if (!code || String(typed == null ? '' : typed).trim() !== code) return false;
+  PropertiesService.getUserProperties().setProperty(_accessKey_(config), _accessMark_(config));
+  return true;
+}
+function _inList_(list, email) {
+  const me = (email || '').trim().toLowerCase();
+  return !!me && (list || '').toLowerCase().split(/[\s,;]+/).filter(Boolean).includes(me);
+}
+function _isAdmin_(config, email) { return _inList_(config.adminEmails, email); }
+// Core members (CORE_MEMBERS) and admins (ADMIN_EMAILS) never need the access code; everyone else does.
+function _isCoreMember_(config, email) { return _inList_(config.coreMembers, email) || _isAdmin_(config, email); }
+
+/**
+ * dashboardGate: called by the thin client's doGet. Returns '' when this person may open the dashboard, otherwise
+ * the HTML of the page to show instead (the access-code box, or why BibMan can't be opened). A correct ?access=CODE
+ * in the link is remembered here and lets them straight in.
+ */
+function dashboardGate(config, params) {
+  params = params || {};
+  const email = (Session.getActiveUser().getEmail() || '').trim();
+  if (!email) return _gatePage_(config, params, 'Please sign in to your Google account, then open this link again.', false);
+  if (_isCoreMember_(config, email)) return '';
+  if (!_accessCode_(config)) {
+    return _gatePage_(config, params, 'BibMan has no access code set up yet. (For the administrator: set the Script ' +
+                      'Property BIBMAN_ACCESS_CODE in the BibMan Frontend project.)', false);
+  }
+  if (params.access != null && String(params.access).trim() !== '') {
+    if (_rememberAccessCode_(config, params.access)) return '';
+    return _gatePage_(config, params, 'The access code in this link is not (or no longer) the right one. Please type the current code:', true);
+  }
+  if (_hasAccess_(config)) return '';
+  return _gatePage_(config, params, 'Please type the BibMan access code you were given:', true);
+}
+
+function _gatePage_(config, params, message, withBox) {
+  const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const branch = dashboardBranchName(params.branch || '');
+  const target = (config.dashUrl || '') + (branch !== 'main' ? '?branch=' + encodeURIComponent(branch) : '');
+  const box = !withBox ? '' :
+    '<div style="margin-top:16px"><input id="c" type="password" autocomplete="off" autofocus ' +
+    'style="font-family:monospace;font-size:14px;padding:7px 10px;width:240px;border-radius:4px;border:1px solid #353540;' +
+    'background:#0f0f11;color:#e8e8f0" onkeydown="if(event.key===\'Enter\')go()"> ' +
+    '<button onclick="go()" style="font-family:monospace;font-size:13px;padding:7px 14px;border-radius:4px;border:0;' +
+    'background:#7eb8f7;color:#0f0f11;font-weight:600;cursor:pointer">Open BibMan</button></div>' +
+    '<p id="m" style="color:#888;min-height:1.4em;margin-top:12px"></p>' +
+    '<script>const T=' + JSON.stringify(target) + ';' +
+    'function m(h){document.getElementById("m").innerHTML=h}' +
+    'function go(){const v=document.getElementById("c").value;if(!v.trim())return;m("Checking…");' +
+    'google.script.run.withSuccessHandler(function(r){if(r&&r.ok){' +
+    'm(\'Code accepted. <a href="\'+T+\'" target="_top" style="color:#7eb8f7">Open BibMan</a>\');' +
+    'try{window.open(T,"_top")}catch(e){}}' +
+    'else{m("That code didn\'t work. Please check it with whoever gave you the BibMan link.")}})' +
+    '.withFailureHandler(function(e){m(String(e&&e.message||e))}).gas("enterAccessCode",v)}</script>';
+  return '<html><body style="font-family:monospace;background:#17171a;color:#e8e8f0;margin:0;padding:40px">' +
+    '<h2 style="color:#7eb8f7;margin:0 0 12px">BibMan</h2><p style="line-height:1.6;max-width:560px">' + esc(message) + '</p>' +
+    box + '</body></html>';
+}
+
+// Kept for thin clients from before Core 9, whose doGet still asks for the access sheet's list: an empty list
+// lets nobody in, so selecting Core 9 without also updating the Frontend Code.gs fails safe (see version.json).
+function getAllowedUsers(config) { return []; }
 
 /**
  * fetchDashboardHtml: Fetches the BibMan dashboard UI from GitHub.
@@ -566,9 +624,10 @@ function getAuthSuccessHtml() {
     '</div></body></html>';
 }
 
-function getAccessDeniedHtml(email) {
-  return '<h3 style="font-family:monospace;color:#f77e7e">Access denied.</h3>' +
-    '<p style="font-family:monospace">Your account (' + (email || '') + ') is not authorized for BibMan.</p>';
+function getAccessDeniedHtml(email) {   // used by thin clients from before Core 9
+  return '<h3 style="font-family:monospace;color:#f77e7e">BibMan has been updated.</h3>' +
+    '<p style="font-family:monospace">Its Frontend Code.gs needs the version that goes with Core 9 (see version.json) ' +
+    'before anyone can open it.</p>';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

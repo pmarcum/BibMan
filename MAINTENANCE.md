@@ -204,15 +204,23 @@ This lists any such file that other accounts can still read. An empty result is 
 
 ## Adding and removing people
 
-**To add someone:** add a row to the `allowed_users` tab of the access-list Sheet (column A their Google email, column B their name, column D `TRUE` if they should be an admin), then send them the dashboard link. They install the bookmarklet themselves from **Utilities → Bookmarklet**.
+Since 2 November 2026 (Core 9) there is no list of people: the dashboard is open to anyone signed in to Google who has the **dashboard link** and the **access code** (Script Property `BIBMAN_ACCESS_CODE` in the **Frontend** project). Each person enters the code once, in the box BibMan shows or in the link as `?access=CODE`, and BibMan remembers it for them until the code changes. Capitals count; spaces at either end are ignored. If no code is set, nobody can open the dashboard.
 
-**To remove someone from the dashboard:** delete their row. They lose the dashboard within about 5 minutes; that's how long a successful access check is remembered.
+**To add someone:** send them the dashboard link and the access code. They install the bookmarklet themselves from **Utilities → Bookmarklet**.
 
-**To cut someone off completely:** removing the row is not enough if they have a bookmarklet installed. The bookmarklet carries the shared `GAS_CREDENTIAL`, so it keeps adding papers to the library until that credential changes. To revoke all access, including old bookmarklets and any copied credential:
+**Admins** (who see the **Admin** menu) are the Google emails listed, separated by commas, in the Frontend's Script Property `ADMIN_EMAILS`.
 
-1. Delete their row from `allowed_users`.
+**Core members** never need the access code: list their Google emails (the address they sign in with), separated by commas, in the Frontend's Script Property `CORE_MEMBERS`. Admins never need it either. Changing the code doesn't affect them; removing someone from the list does, at once (they then need the code like everyone else).
+
+**To shut out everyone you don't give a new code to:** change `BIBMAN_ACCESS_CODE` (Project Settings → Script Properties; no redeploying) and send the new code to those who should keep using BibMan. It takes effect at once: every dashboard action checks the current code, so even an open dashboard stops working until the new code is entered.
+
+**To cut someone off completely:** a new access code is not enough if they have a bookmarklet installed. The bookmarklet carries the shared `GAS_CREDENTIAL`, so it keeps adding papers to the library until that credential changes, and the dashboard hands the same credential to every browser. To revoke all access, including old bookmarklets and any copied credential:
+
+1. Change `BIBMAN_ACCESS_CODE` as above.
 2. Replace `GAS_CREDENTIAL` as described under *Rotating secrets* below.
 3. Ask everyone who should keep access to re-drag the bookmarklet from **Utilities → Bookmarklet**, since their old one stops working.
+
+gooTeX doesn't use the access code: it reads the bibliography from the server with its own read-only `EXPORT_CREDENTIAL`.
 
 If gooTeX shares the server and still uses `GAS_CREDENTIAL` rather than its own `EXPORT_CREDENTIAL`, update gooTeX in the same sitting, or its bibliographies stop updating.
 

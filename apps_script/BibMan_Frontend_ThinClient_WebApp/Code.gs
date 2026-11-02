@@ -19,7 +19,11 @@
  *        CLOUDFLARE_URL                 = https://xxxx.trycloudflare.com  (auto-updated by VM)
  *        ADS_TOKEN                      = your NASA ADS API token
  *        GEMINI_KEY                     = your Google Gemini API key
- *        ACCESS_SHEET_ID                = Spreadsheet ID containing allowed_users tab
+ *        BIBMAN_ACCESS_CODE             = the access code people type once to open the dashboard (Core 9);
+ *                                         change it to shut out anyone you don't give the new code to
+ *        ADMIN_EMAILS                   = who sees the Admin menu: Google emails separated by commas
+ *        CORE_MEMBERS                   = people who never need the access code: Google emails separated by commas
+ *                                         (admins never need it either)
  *        PDF_FOLDER_ID                  = Drive folder ID for BibMan_PDFs parent
  *        BOOKMARKLET_CAPTURE_WEBAPP_URL = URL of BibMan_Bookmarklet_Capture_webapp
  *        CF_WORKER_URL                  = Cloudflare Worker URL (optional)
@@ -70,7 +74,9 @@ function _cfg() {
     exportFolderId:            p.getProperty('EXPORT_FOLDER_ID')           || '',
     cfWorkerUrl:               p.getProperty('CF_WORKER_URL')              || '',
     captureUrl:                p.getProperty('BOOKMARKLET_CAPTURE_WEBAPP_URL')         || '',
-    accessSheetId:             p.getProperty('ACCESS_SHEET_ID')            || '',
+    accessCode:                p.getProperty('BIBMAN_ACCESS_CODE')         || '',
+    adminEmails:               p.getProperty('ADMIN_EMAILS')               || '',
+    coreMembers:               p.getProperty('CORE_MEMBERS')               || '',
     dashUrl:                   p.getProperty('BIBMAN_DASHBOARD_URL')       || ScriptApp.getService().getUrl(),
     // Version info — compared against version.json on GitHub by BibMan_Core
     frontendThinClientVersion: parseInt(p.getProperty('FRONTEND_THINCLIENT_VERSION'), 10) || 1,
@@ -80,7 +86,7 @@ function _cfg() {
 
 // ── Web app entry points ───────────────────────────────────────────────────────
 // doGet MUST live here — GAS libraries cannot serve HtmlService output.
-// Access control logic is delegated to BibMan_Core.getAllowedUsers().
+// Who may open it is decided by BibMan_Core.dashboardGate() (the access code, since Core 9).
 // Index.html is fetched live from GitHub so all groups always have the
 // latest UI with zero manual intervention.
 function doGet(e) {
@@ -89,12 +95,12 @@ function doGet(e) {
       .setTitle('BibMan — Authorized');
   }
   const config = _cfg();
-  const email   = Session.getActiveUser().getEmail();
-  const users   = BibManCore.getAllowedUsers(config);
-  const allowed = users.map(u => u.email);
-  if (!allowed.includes(email.toLowerCase())) {
-    return HtmlService.createHtmlOutput(BibManCore.getAccessDeniedHtml(email))
-      .setTitle('BibMan — Access Denied');
+  // '' = come in; otherwise a page asking for the access code (or saying why BibMan can't be opened)
+  const gate = BibManCore.dashboardGate(config, (e && e.parameter) || {});
+  if (gate) {
+    return HtmlService.createHtmlOutput(gate).setTitle('BibMan — access code')
+      .setFaviconUrl('https://raw.githubusercontent.com/pmarcum/BibMan/main/favicon.png')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   // ?branch=NAME loads a test page from that branch of the repo (needs Core 6); the normal link loads main.
   const branch = BibManCore.dashboardBranchName((e && e.parameter && e.parameter.branch) || '');

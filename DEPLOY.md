@@ -17,7 +17,7 @@ Bookmarklet ─► Capture web app┘   (Apps Script)          │              
 - **The server** (`cloud/`) holds the library. It is a Flask app on an always-on Linux VM, reachable only through nginx over HTTPS.
 - **Three Google Apps Script projects** (`apps_script/`) sit in front of it. Users only ever see `script.google.com` addresses, which get through most workplace firewalls, and Google handles sign-in.
   - `BibMan_Core_Library`: all the logic, shared by the other two as a library.
-  - `BibMan_Frontend_ThinClient_WebApp`: serves the dashboard and checks the access list.
+  - `BibMan_Frontend_ThinClient_WebApp`: serves the dashboard and checks the access code.
   - `BibMan_Bookmarklet_Capture_ThinClient_WebApp`: receives clicks from the "Add to BibMan" bookmarklet.
 - **Files at the root of this repo are served live.** `Index.html` (the dashboard), `bookmarklet.js`, `version.json`, `favicon.png` and `synonyms/*.tsv` are fetched from `github.com/pmarcum/BibMan` at run time, so every instance gets interface updates automatically. If you fork BibMan and want your own interface, change the `raw.githubusercontent.com/pmarcum/BibMan/main/…` URLs in `BibMan_Core_Library/Code.gs`, `BibMan_Frontend_ThinClient_WebApp/Code.gs` and `cloud/bibman_e2micro_server.py` to point at your fork.
 
@@ -25,7 +25,7 @@ Bookmarklet ─► Capture web app┘   (Apps Script)          │              
 
 - An always-on Linux VM. BibMan is developed on a Google Cloud **e2-micro** (1 GB RAM, free tier) running **Debian 12**; anything comparable works. Give it a **static external IP** and open ports 80 and 443.
 - A free **[DuckDNS](https://www.duckdns.org)** subdomain pointing at that IP (any domain name works).
-- A Google account to own the Apps Script projects, plus a Google Sheet for the access list.
+- A Google account to own the Apps Script projects.
 - A **[NASA ADS API token](https://ui.adsabs.harvard.edu/user/settings/token)** (paper metadata) and a **[Gemini API key](https://aistudio.google.com/apikey)** (embeddings for semantic search). These live in Apps Script, not on the server.
 - A **Cloudflare Worker** URL for viewing arXiv PDFs in the dashboard (`CF_WORKER_URL`; see [Part 3](#part-3-the-pdf-proxy-worker)).
 
@@ -105,16 +105,9 @@ Certbot renews the certificate automatically.
 
 Create these in the Google account that will own your BibMan. In each project, use **Project Settings → Show "appsscript.json" manifest file in editor**, then paste the files from the matching `apps_script/` folder. Script Properties are under **Project Settings → Script Properties**.
 
-### 2a. The access list
+### 2a. Who can use it
 
-Create a Google Sheet with a tab named exactly **`allowed_users`**. Row 1 is a header; from row 2 on:
-
-| A: email | B: name | C | D: admin |
-|---|---|---|---|
-| alice@university.edu | Alice | | TRUE |
-| bob@gmail.com | Bob | | FALSE |
-
-Only rows with both an email and a name count. Column C isn't used by the access check. Note the Sheet's ID (the long string in its URL).
+There is no list of people (since Core 9). Anyone signed in to Google who has the dashboard link **and** the group's **access code** can use the dashboard. Choose an access code: a few words or a mix of letters and digits that nobody would guess (capitals count). You set it as a Script Property in 2c, give it to the people who should use BibMan, and change it whenever you want to shut out anyone you don't give the new one to. Each person types it once; BibMan remembers it for them until it changes.
 
 ### 2b. `BibMan_Core_Library`
 
@@ -134,7 +127,9 @@ Only rows with both an email and a name count. Column C isn't used by the access
 | `DUCKDNS_URL` | `https://yourname.duckdns.org` (no trailing slash) |
 | `ADS_TOKEN` | your NASA ADS token |
 | `GEMINI_KEY` | your Gemini API key |
-| `ACCESS_SHEET_ID` | the access-list Sheet ID |
+| `BIBMAN_ACCESS_CODE` | the access code (2a) |
+| `ADMIN_EMAILS` | the Google emails of the people who should see the **Admin** menu, separated by commas (e.g. your own) |
+| `CORE_MEMBERS` | *optional*: Google emails of people who should never need the access code, separated by commas (admins never need it either) |
 | `FRONTEND_THINCLIENT_VERSION` | `bibman_frontend_thinclient_webapp_version` from `version.json` |
 | `CF_WORKER_URL` | your PDF-proxy Worker URL (Part 3) |
 | `BOOKMARKLET_CAPTURE_WEBAPP_URL` | filled in after 2d |
@@ -161,7 +156,7 @@ When you change code later, use **Deploy → Manage deployments → Edit → New
 *Meaning-based search starts working once you have papers: after the nightly job has embedded your first batch, build the search index once (MAINTENANCE.md, "The semantic-search index"). Word and synonym search work from the first paper.*
 
 
-Open the dashboard URL, go to **Utilities → Bookmarklet**, drag **Add to BibMan** to your bookmarks bar, and use it on an ADS or arXiv page. Then send the dashboard link to the people on your access list.
+Open the dashboard URL, go to **Utilities → Bookmarklet**, drag **Add to BibMan** to your bookmarks bar, and use it on an ADS or arXiv page. Then send the dashboard link and the access code to the people who should use BibMan.
 
 ---
 
@@ -189,7 +184,7 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
   Check them with `ls -l`: the line should start `-rw-------`. Both BibMan and gooTeX run as `bibman`, so this never locks either one out.
 - **Remove leftovers.** Don't leave copies of keys, old backups of the service file, or one-off scripts lying around in home folders or `/tmp` once you're done with them.
 
-- **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, so only put people you trust on the access list. (The Gemini key stays in Apps Script: since Core 4 it is no longer sent to browsers.) If someone leaves, generate a new value, change it in `bibman.service` and all three projects, restart, and have everyone re-drag the bookmarklet.
+- **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, so only give the dashboard link and access code to people you trust. (The Gemini key stays in Apps Script: since Core 4 it is no longer sent to browsers.) If someone leaves, generate a new value, change it in `bibman.service` and all three projects, restart, and have everyone re-drag the bookmarklet.
 - **`/get_bib` has no credential check**, and nothing needs to reach it from outside the VM (gooTeX does not use it). The supplied nginx config blocks it at the public address; keep that block if you edit the config. Don't delete the Python function `get_bib()` itself: the authenticated `/api/export/bib-text` route uses it.
 - **Never commit** `bibman.db`, the `.usearch` index, `bibman_config.json`, or a filled-in `bibman.service`. The repo's `.gitignore` covers the common names.
 

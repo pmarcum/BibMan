@@ -1,5 +1,13 @@
 # Changelog
 
+## 2 November 2026: an access code instead of the access sheet (Core 9)
+
+- **No list of people any more.** The dashboard is open to anyone signed in to Google who has its link and the group's **access code** (Script Property `BIBMAN_ACCESS_CODE` in the Frontend project); the `allowed_users` sheet is no longer read. Each person types the code once (or it is in the link as `?access=CODE`) and BibMan remembers it for them, as a fingerprint, not the code itself, until the code is changed; then everyone is asked once for the new one. Every dashboard action checks the current code, so a change takes effect at once. Capitals count; spaces at either end are ignored; with no code set, nobody gets in.
+- **Admins are listed in the Script Property `ADMIN_EMAILS`** (emails separated by commas) instead of the sheet's admin column.
+- **Core members, listed in `CORE_MEMBERS`, never need the access code**, and neither do admins: they are let in by their Google email. Changing the code doesn't affect them.
+- The bookmarklet and gooTeX are unchanged: the bookmarklet uses `GAS_CREDENTIAL`, gooTeX its read-only `EXPORT_CREDENTIAL`.
+- Core library 9 and a new Frontend `Code.gs` (12), which must be installed together; Capture: select Core 9 and redeploy (its `Code.gs` is unchanged). A Frontend still on the old `Code.gs` with Core 9 lets nobody in and says it needs updating. No server or dashboard (`Index.html`) change.
+
 ## 2 November 2026: the same label on several notes of a paper
 
 - **Fixed: a label could be used only once per paper.** Databases made before note tagging had the rule "one person, one label, once per paper", counting the paper and all its notes together, so tagging a second highlight with a label already on another note (or on the paper) was silently ignored: the tick showed, then was gone. The rule is now once per person on the paper as a whole and once on each note. `cloud/bibman_fix_tags.py` changes it on an existing database, keeping every tag and the old table (`paper_tags_old_rule_<date>`) as a backup; the server also changes it at start if it finds the old rule, and `cloud/schema.sql` has the new one. The server now answers "already there" instead of pretending to add a tag that is already there.
