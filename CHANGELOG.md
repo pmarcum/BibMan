@@ -7,7 +7,7 @@
 - **Deleting a label everywhere needs its name typed.** The ✕ in the sidebar Tags list opens a box saying the label will be taken off every paper and every note that has it, in all libraries, and can't be undone; *Delete everywhere* only works once the label's name has been typed (capitals and spaces at the ends don't matter). The hover text on ✎ and ✕ there now says they act everywhere.
 - **Paper tags and note tags shown apart.** The tag strip above the annotations in paper view has two lines: *Paper:* for tags on the paper as a whole, and *In notes:* for tags on highlights and notes, each label once with the number of notes that have it (e.g. *TCAN26 ×2*). Hovering shows who applied it.
 - **The ✕ on a note says what it deletes:** *Delete this highlight and its note*, or *Delete this paper note* (it said only *Delete*), and so does the question before deleting.
-- **Brighter counts in the left sidebar** (All Papers, Key Paper, Notes, Highlights, Pinned, Follow-up): they were nearly the colour of the background; now light grey, and blue on the selected filter.
+- **Brighter counts in the left sidebar** (All Papers, Key Paper, Notes, Highlights, Pinned, Follow-up): they were nearly the colour of the background; now the same colour as their label, brightening with it on hover and turning blue with it when selected.
 - Dashboard only (`Index.html`): no server or Apps Script change.
 
 ## 1 November 2026: search indexes kept up to date every night
