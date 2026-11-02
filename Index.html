@@ -264,12 +264,7 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
 #selection-note:focus{border-color:var(--accent)}
 .sel-btns{display:flex;gap:6px;margin-top:7px;justify-content:flex-end}
 .sel-title{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:4px}
-.sel-tags-head{font-size:10px;color:var(--muted);margin-top:6px}
-#selection-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
-.sel-tag-chip{font-size:10px;padding:1px 6px;border-radius:9px;cursor:pointer;border:1px solid var(--border2);
-  color:var(--text);background:var(--bg);user-select:none}
-.sel-tag-chip.on{color:#111;font-weight:600}
-.sel-tags-help{font-size:9px;color:var(--muted);margin-top:4px;line-height:1.3}
+.sel-tags-help{font-size:10px;color:var(--muted);margin-top:6px;line-height:1.4}
 .pdf-highlight-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
 .pdf-placeholder{flex:1;display:flex;align-items:center;justify-content:center;
   flex-direction:column;gap:12px}
@@ -754,7 +749,7 @@ or add new database">?</span>
           transform:translateX(-50%);background:#1a1a24;border:1px solid var(--accent);
           border-radius:4px;padding:5px 12px;font-size:11px;font-family:var(--mono);
           color:var(--accent);z-index:9999;pointer-events:none;opacity:0.9">
-          Text selected — press <strong>H</strong> to highlight it (you can add a note and tags)
+          Text selected — press <strong>H</strong> to highlight it (you can add a note)
         </div>
       </div>
     </div>
@@ -1065,9 +1060,8 @@ or add new database">?</span>
   <div class="sel-title">Highlight this passage</div>
   <div id="selection-preview"></div>
   <textarea id="selection-note" rows="2" placeholder="Add a note (optional)…"></textarea>
-  <div class="sel-tags-head">Tags (optional): click to add</div>
-  <div id="selection-tags"></div>
-  <div class="sel-tags-help">You can also tag it later with the 🏷 on its note in the Annotations list.</div>
+  <div class="sel-tags-help">After saving, use the buttons on its note in the Annotations list on the right to tag it (🏷)
+    or mark it 🎯 Key Point, 📌 Pinned or 🔄 Follow-up.</div>
   <div class="sel-btns">
     <button class="btn-sm" onclick="dismissSelectionPopup()">Cancel</button>
     <button class="btn-sm primary" onclick="saveSelectionAnnotation()">Save highlight</button>
@@ -4019,7 +4013,7 @@ function _hideSelHint() {
   if (hint) hint.style.display = 'none';
   clearTimeout(_selHintTimer);
 }
-// H (no Ctrl/Alt/Cmd) with text selected in the PDF = highlight it (with an optional note and tags).
+// H (no Ctrl/Alt/Cmd) with text selected in the PDF = highlight it (with an optional note).
 // A bare letter is free in every browser on Windows and Mac. It only acts when text is selected in the PDF and
 // the typing focus is not in a box (note field, search box …), so an "h" typed anywhere else stays an "h".
 document.addEventListener('keydown', e => {
@@ -4040,7 +4034,6 @@ document.addEventListener('keydown', e => {
             ? _selectionData.quote.substring(0, 80) + '…'
             : _selectionData.quote;
         document.getElementById('selection-note').value = '';
-        _renderSelectionTagChips();
         popup.style.left = Math.max(8, (window.innerWidth  - 320) / 2) + 'px';
         popup.style.top  = Math.max(8, (window.innerHeight - 220) / 2) + 'px';
         popup.classList.add('visible');
@@ -4164,28 +4157,11 @@ function dismissSelectionPopup() {
   _selectionData = null;
   window.getSelection()?.removeAllRanges();
 }
-let _selTagChoice = new Set();   // labels picked in the highlight box
-async function _renderSelectionTagChips() {
-  _selTagChoice = new Set();
-  const el = document.getElementById('selection-tags');
-  if (!el) return;
-  el.innerHTML = '<span style="font-size:10px;color:var(--muted)">…</span>';
-  const labels = await getTagLabelsCache();
-  el.innerHTML = labels.length
-    ? labels.map(l => `<span class="sel-tag-chip" data-id="${l.id}" data-color="${l.color}"
-        onclick="_toggleSelTag(this)">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>`).join('')
-    : '<span style="font-size:10px;color:var(--muted)">No labels yet (create one with 🏷 Tag)</span>';
-}
-function _toggleSelTag(el) {
-  const id = el.dataset.id;
-  if (_selTagChoice.has(id)) { _selTagChoice.delete(id); el.classList.remove('on'); el.style.background = ''; }
-  else { _selTagChoice.add(id); el.classList.add('on'); el.style.background = el.dataset.color; }
-}
 async function saveSelectionAnnotation() {
   if (!_selectionData || !_current) return;
   // Keep our own copies: a click elsewhere, or a new selection, while this is saving clears or replaces _selectionData
-  // (that gave "Cannot read properties of null (reading 'rects')"), and the paper or the chosen tags could change too
-  const sel = _selectionData, paper = _current, chosen = [..._selTagChoice];
+  // (that gave "Cannot read properties of null"), and another paper could be opened meanwhile
+  const sel = _selectionData, paper = _current;
   const note = document.getElementById('selection-note').value.trim();
   const popup = document.getElementById('selection-popup');
   popup.classList.remove('visible');
@@ -4214,12 +4190,7 @@ async function saveSelectionAnnotation() {
     paper.annotations = paper.annotations || [];
     paper.annotations.push(newAnn);
     if (_current === paper) _renderAnnotations(paper.annotations);
-    for (const labelId of chosen) {
-      try { await gas('addPaperTag', paper.id, labelId, r.id); }
-      catch(err) { notify('Highlight saved, but a tag could not be added: ' + err.message, 'error'); }
-    }
-    notify(chosen.length ? `Highlight saved with ${chosen.length} tag${chosen.length > 1 ? 's' : ''}` : 'Highlight saved', 'success', 1800);
-    if (chosen.length) { _tagLabels = null; await loadPapers(); if (_currentPanel === 'paper' && _current === paper) renderPaperViewTags(); }
+    notify('Highlight saved', 'success', 1800);
     // Update only the affected pages' highlight canvases — no full re-render (only if this paper is still open)
     const affectedPages = _current === paper ? [...new Set(sel.rects.map(r => r.page || 1))] : [];
     affectedPages.forEach(pg => {
