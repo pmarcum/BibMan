@@ -3427,7 +3427,7 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
     <div style="font-size:10px;color:var(--muted);margin:-2px 0 6px;line-height:1.35">Click a label to add it. ✓ = already on
       this ${annotationId ? 'note' : 'paper'}: click it to take it off (only here).</div>
     ${myLabels.length ? myLabels.map(l => `
-      <div class="tag-label-row" onclick="_togglePaperTag('${paperId}','${l.id}',${appliedIds.has(l.id)},this)">
+      <div class="tag-label-row" data-applied="${appliedIds.has(l.id) ? 1 : 0}" onclick="_togglePaperTag('${paperId}','${l.id}',this)">
         <span class="tag-sq" style="background:${l.color}">${appliedIds.has(l.id)?'✓':''}</span>
         <span style="font-size:11px;flex:1">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>
         ${l.user_id === _currentUser ? '' : `<span style="font-size:9px;color:var(--muted)" title="Shared label made by @${esc(l.user_id)}">@${esc(l.user_id.substring(0,6))}</span>`}
@@ -3488,18 +3488,35 @@ async function _createTagLabel() {
     renderSidebarTagFilter();
   } catch(e) { notify(e.message, 'error'); }
 }
-async function _togglePaperTag(paperId, labelId, isApplied, rowEl) {
-  try {
-    if (isApplied) {
-      await gas('removePaperTag', paperId, labelId, _tagActiveAnnotation);
-    } else {
-      await gas('addPaperTag', paperId, labelId, _tagActiveAnnotation);
-    }
+// Clicking a label in the picker ticks or unticks it at once and the picker stays open, so several labels can be
+// picked in a row; the change is saved in the background (the row is dimmed until it is), and is undone, with a
+// message, if the save fails. The library list and tag strip refresh once, shortly after the last click.
+let _tagRefreshTimer = null;
+function _refreshAfterTagChange() {
+  clearTimeout(_tagRefreshTimer);
+  _tagRefreshTimer = setTimeout(async () => {
     _tagLabels = null;
-    if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
-    await loadPapers();
     if (_currentPanel === 'paper') renderPaperViewTags();
-  } catch(e) { notify(e.message, 'error'); }
+    await loadPapers();
+  }, 1200);
+}
+async function _togglePaperTag(paperId, labelId, rowEl) {
+  if (rowEl.dataset.busy === '1') return;               // still saving the previous click on this row
+  const annotationId = _tagActiveAnnotation;            // fixed now, in case another picker is opened meanwhile
+  const wasApplied = rowEl.dataset.applied === '1';
+  const box = rowEl.querySelector('.tag-sq');
+  const show = on => { rowEl.dataset.applied = on ? '1' : '0'; if (box) box.textContent = on ? '✓' : ''; };
+  show(!wasApplied); rowEl.dataset.busy = '1'; rowEl.style.opacity = '.55';
+  try {
+    if (wasApplied) await gas('removePaperTag', paperId, labelId, annotationId);
+    else            await gas('addPaperTag', paperId, labelId, annotationId);
+    _refreshAfterTagChange();
+  } catch(e) {
+    show(wasApplied);
+    notify(e.message, 'error');
+  } finally {
+    rowEl.dataset.busy = '0'; rowEl.style.opacity = '';
+  }
 }
 async function _editTagLabel(labelId, currentLabel, currentColor) {
   const newLabel = prompt('Rename label:', currentLabel);
