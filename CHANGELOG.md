@@ -1,5 +1,13 @@
 # Changelog
 
+## 1 November 2026: highlighting and tagging made clearer and safer
+
+- **Press H to highlight** the text selected in a PDF (it was Alt+A, "annotate", which also never worked on a Mac). H only acts while text is selected in the PDF and you are not typing in a box, and as a plain letter it clashes with no browser shortcut on Windows or Mac. The box that opens is titled *Highlight this passage*: an optional note, then your labels as chips to tag the highlight straight away (click to pick one or several), and **Save highlight** (the button was called *Bookmark*). It says the highlight can also be tagged later with the 🏷 on its note.
+- **Tag pickers only add and remove tags.** The pickers behind 🏷 Tag (whole paper) and a note's 🏷 say what the ticks mean ("✓ = already on this paper: click it to take it off, only here") and no longer offer rename, share/private or delete, which change a label everywhere. Those stay in the Tags list in the left sidebar, so a slip while untagging one note can't delete a label from the whole library.
+- **Deleting a label everywhere needs its name typed.** The ✕ in the sidebar Tags list opens a box saying the label will be taken off every paper and every note that has it, in all libraries, and can't be undone; *Delete everywhere* only works once the label's name has been typed (capitals and spaces at the ends don't matter). The hover text on ✎ and ✕ there now says they act everywhere.
+- **Paper tags and note tags shown apart.** The tag strip above the annotations in paper view has two lines: *Paper:* for tags on the paper as a whole, and *In notes:* for tags on highlights and notes, each label once with the number of notes that have it (e.g. *TCAN26 ×2*). Hovering shows who applied it.
+- Dashboard only (`Index.html`): no server or Apps Script change.
+
 ## 1 November 2026: search indexes kept up to date every night
 
 - **New papers reach meaning-based search the morning after they are added.** After the nightly processing has embedded new passages, the server starts `bibman_rebuild_usearch.py --sync`, which brings each library's index up to date: it adds passages that are new, re-extracted or moved in (in random order) and removes those deleted, replaced or moved out, so each index holds exactly its library's embedded passages. It is checked before it replaces the index (the passages it added plus 50 already there must come back within the first 10, at least 97% of them), keeps the previous index as `.prev`, and keeps a result that fails as `.failed`. Log: `bibman_usearch_sync.log` next to the database.

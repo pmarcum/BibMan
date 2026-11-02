@@ -96,6 +96,7 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
 .btn-sm:hover{border-color:var(--accent);color:var(--accent)}
 .btn-sm.primary{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
 .btn-sm.primary:hover{background:#a0ccff}
+#del-label-ok:disabled{opacity:.35;cursor:not-allowed}
 
 /* ── Paper table ── */
 .paper-table{flex:1;overflow-y:auto}
@@ -263,6 +264,13 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
   padding:5px 8px;resize:none;outline:none;line-height:1.4}
 #selection-note:focus{border-color:var(--accent)}
 .sel-btns{display:flex;gap:6px;margin-top:7px;justify-content:flex-end}
+.sel-title{font-size:11px;font-weight:600;color:var(--accent);margin-bottom:4px}
+.sel-tags-head{font-size:10px;color:var(--muted);margin-top:6px}
+#selection-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:3px}
+.sel-tag-chip{font-size:10px;padding:1px 6px;border-radius:9px;cursor:pointer;border:1px solid var(--border2);
+  color:var(--text);background:var(--bg);user-select:none}
+.sel-tag-chip.on{color:#111;font-weight:600}
+.sel-tags-help{font-size:9px;color:var(--muted);margin-top:4px;line-height:1.3}
 .pdf-highlight-canvas{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none}
 .pdf-placeholder{flex:1;display:flex;align-items:center;justify-content:center;
   flex-direction:column;gap:12px}
@@ -747,7 +755,7 @@ or add new database">?</span>
           transform:translateX(-50%);background:#1a1a24;border:1px solid var(--accent);
           border-radius:4px;padding:5px 12px;font-size:11px;font-family:var(--mono);
           color:var(--accent);z-index:9999;pointer-events:none;opacity:0.9">
-          Text selected — press <strong>Alt+A</strong> to annotate
+          Text selected — press <strong>H</strong> to highlight it (you can add a note and tags)
         </div>
       </div>
     </div>
@@ -757,10 +765,10 @@ or add new database">?</span>
       <div class="anno-header">
         <div class="anno-header-title">Annotations</div>
         <div style="display:flex;align-items:center;gap:6px">
-          <button class="btn-sm" onclick="openTagPopoverForCurrentPaper(this)" title="Add/manage tags for this paper">🏷️ Tag</button>
+          <button class="btn-sm" onclick="openTagPopoverForCurrentPaper(this)" title="Tag this paper as a whole (click a ticked label to remove it)">🏷️ Tag</button>
           <div style="display:flex;align-items:center;gap:4px">
             <button class="btn-sm" onclick="openAnnModal()">+ Paper Note</button>
-            <span class="nav-help" data-tip="Add a note about this paper as a whole. To highlight specific text instead, select it in the PDF and press Alt+A." onclick="event.stopPropagation()">?</span>
+            <span class="nav-help" data-tip="Add a note about this paper as a whole. To highlight specific text instead, select it in the PDF and press H." onclick="event.stopPropagation()">?</span>
           </div>
         </div>
       </div>
@@ -1053,13 +1061,17 @@ or add new database">?</span>
   </div>
 </div><!-- end .main -->
 
-<!-- Text selection / bookmark popup (single instance) -->
+<!-- Highlight box for selected text (single instance) -->
 <div id="selection-popup">
+  <div class="sel-title">Highlight this passage</div>
   <div id="selection-preview"></div>
   <textarea id="selection-note" rows="2" placeholder="Add a note (optional)…"></textarea>
+  <div class="sel-tags-head">Tags (optional): click to add</div>
+  <div id="selection-tags"></div>
+  <div class="sel-tags-help">You can also tag it later with the 🏷 on its note in the Annotations list.</div>
   <div class="sel-btns">
     <button class="btn-sm" onclick="dismissSelectionPopup()">Cancel</button>
-    <button class="btn-sm primary" onclick="saveSelectionAnnotation()">★ Bookmark</button>
+    <button class="btn-sm primary" onclick="saveSelectionAnnotation()">Save highlight</button>
   </div>
 </div>
 
@@ -1171,6 +1183,23 @@ or add new database">?</span>
 </div>
 
 <!-- Annotation Modal -->
+<div class="modal-overlay" id="del-label-modal">
+  <div class="modal" style="width:420px">
+    <h2>Delete a label everywhere</h2>
+    <div style="font-size:12px;line-height:1.5;margin-bottom:10px">The label <strong id="del-label-name"></strong> will be taken off
+      <strong>every paper and every note</strong> that has it, in all libraries, and the label itself will be deleted.
+      This can't be undone.<br><span style="color:var(--muted)">To take a tag off just one paper or note, close this and use
+      the 🏷 on that paper or note instead.</span></div>
+    <div class="form-group"><label>Type the label's name to delete it</label>
+      <input id="del-label-input" autocomplete="off" oninput="_delLabelCheck()"
+        onkeydown="if(event.key==='Enter'){_confirmDeleteTagLabel()}else if(event.key==='Escape'){_delLabel=null;closeModal('del-label-modal')}"></div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="_delLabel=null;closeModal('del-label-modal')">Cancel</button>
+      <button class="btn-sm" id="del-label-ok" disabled onclick="_confirmDeleteTagLabel()"
+        style="background:var(--red);border-color:var(--red);color:#fff;font-weight:600">Delete everywhere</button>
+    </div>
+  </div>
+</div>
 <div class="modal-overlay" id="modal-ann">
   <div class="modal">
     <h2>Add Note</h2>
@@ -2169,11 +2198,11 @@ function openAddAnnotation() {
     return;
   }
   // Text is selected — the mouseup handler in initTextSelection will have
-  // already shown the bookmark popup, so nothing more to do here.
+  // already shown the highlight hint, so nothing more to do here.
   // But if the popup isn't visible yet (edge case), trigger it manually.
   const popup = document.getElementById('selection-popup');
   if (!popup.classList.contains('visible')) {
-    notify('Text is selected — the bookmark popup should have appeared automatically. Try releasing the mouse button over the PDF text.', 'info', 4000);
+    notify('Text is selected — press H to highlight it. If nothing happens, try releasing the mouse button over the PDF text.', 'info', 4000);
   }
 }
 function openAnnModal() {
@@ -3353,13 +3382,20 @@ async function renderPaperViewTags() {
   try { tags = await gas('getPaperTags', _current.id, !_showMyAnnotationsOnly); } catch(e) {}
   if (!tags.length) { el.style.display = 'none'; return; }
   el.style.display = 'flex';
-  el.innerHTML = tags.map(t => {
-    const owner = t.user_id === _currentUser ? 'you' : '@'+t.user_id;
-    const scope = t.annotation_id ? '📝 annotation' : '📄 paper';
-    return `<span class="tag-sq" style="background:${t.color}"
-      title="${esc(t.label)} (${owner}, ${scope})">${t.label[0].toUpperCase()}</span>
-    <span style="font-size:10px;color:var(--muted)">${esc(t.label)}${t.annotation_id?'<span style="font-size:9px;opacity:.6"> ✏</span>':''}</span>`;
-  }).join('<span style="color:var(--border2);margin:0 3px">·</span>');
+  // one entry per label in each part; who applied it, and in how many notes, is in the hover text
+  const group = list => { const m = new Map();
+    for (const t of list) { const g = m.get(t.label_id) || {t, owners: new Set(), notes: new Set()};
+      g.owners.add(t.user_id === _currentUser ? 'you' : '@' + t.user_id); if (t.annotation_id) g.notes.add(t.annotation_id); m.set(t.label_id, g); }
+    return [...m.values()].sort((a, b) => a.t.label.localeCompare(b.t.label)); };
+  const chip = (g, inNotes) => { const n = g.notes.size, owners = [...g.owners].join(', ');
+    const tip = inNotes ? `${g.t.label}: on ${n} note${n === 1 ? '' : 's'} in this paper (tagged by ${owners})` : `${g.t.label}: on this paper as a whole (tagged by ${owners})`;
+    return `<span title="${esc(tip)}" style="display:inline-flex;align-items:center;gap:3px"><span class="tag-sq" style="background:${g.t.color}">${esc(g.t.label[0].toUpperCase())}</span>`
+      + `<span style="font-size:10px;color:var(--muted)">${esc(g.t.label)}${inNotes ? ` ×${n}` : ''}</span></span>`; };
+  const part = (head, tip, list, inNotes) => list.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;width:100%">`
+    + `<span title="${tip}" style="font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:52px">${head}</span>`
+    + group(list).map(g => chip(g, inNotes)).join('') + `</div>` : '';
+  el.innerHTML = part('Paper:', 'Tags on this paper as a whole', tags.filter(t => !t.annotation_id), false)
+    + part('In notes:', 'Tags on highlighted passages and notes in this paper (×n = in how many notes)', tags.filter(t => t.annotation_id), true);
 }
 // ── Tag (post-it note) system ─────────────────────────────────────────────────
 const TAG_COLORS = ['#f59e0b','#10b981','#3b82f6','#ef4444','#8b5cf6','#f97316','#06b6d4','#ec4899'];
@@ -3392,19 +3428,14 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
   const pop = document.createElement('div');
   pop.className = 'tag-popover';
   pop.innerHTML = `
-    <h4>🏷️ Tags</h4>
+    <h4>🏷️ Tags for this ${annotationId ? 'note' : 'paper'}</h4>
+    <div style="font-size:10px;color:var(--muted);margin:-2px 0 6px;line-height:1.35">Click a label to add it. ✓ = already on
+      this ${annotationId ? 'note' : 'paper'}: click it to take it off (only here).</div>
     ${myLabels.length ? myLabels.map(l => `
       <div class="tag-label-row" onclick="_togglePaperTag('${paperId}','${l.id}',${appliedIds.has(l.id)},this)">
         <span class="tag-sq" style="background:${l.color}">${appliedIds.has(l.id)?'✓':''}</span>
         <span style="font-size:11px;flex:1">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>
-        ${l.user_id === _currentUser ? `<span style="font-size:10px;color:var(--muted);cursor:pointer"
-          title="${l.is_private ? 'Private: only you see this label. Click to share it with everyone.' : 'Shared with everyone. Click to make it private.'}"
-          onclick="event.stopPropagation();_toggleTagPrivate('${l.id}','${esc(l.label)}',${l.is_private ? 'false' : 'true'})">${l.is_private ? '🔒' : '👥'}</span>
-        <span style="font-size:10px;color:var(--muted);cursor:pointer"
-          onclick="event.stopPropagation();_editTagLabel('${l.id}','${esc(l.label)}','${l.color}')">✎</span>
-        <span style="font-size:10px;color:var(--red);cursor:pointer"
-          onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>`
-        : `<span style="font-size:9px;color:var(--muted)" title="Shared label made by @${esc(l.user_id)}">@${esc(l.user_id.substring(0,6))}</span>`}
+        ${l.user_id === _currentUser ? '' : `<span style="font-size:9px;color:var(--muted)" title="Shared label made by @${esc(l.user_id)}">@${esc(l.user_id.substring(0,6))}</span>`}
       </div>`).join('')
     : '<div style="font-size:11px;color:var(--muted)">No labels yet — create one below</div>'}
     <div class="tag-new-row">
@@ -3421,7 +3452,9 @@ async function openTagPopover(paperId, anchorEl, annotationId) {
     <label style="display:flex;align-items:center;gap:4px;margin-top:6px;font-size:10px;color:var(--muted);cursor:pointer"
       title="Private labels are seen and used only by you. Leave unticked to share the label with everyone.">
       <input type="checkbox" id="tag-new-private"> Private (only you)
-    </label>`;
+    </label>
+    <div style="font-size:9px;color:var(--muted);margin-top:6px;line-height:1.35">To rename, share or delete a label
+      everywhere, use the Tags list in the left sidebar.</div>`;
 
   document.body.appendChild(pop);
   const rect = anchorEl.getBoundingClientRect();
@@ -3499,8 +3532,20 @@ async function _toggleTagPrivate(labelId, label, makePrivate) {
     if (_currentPanel === 'paper') renderPaperViewTags();
   } catch(e) { notify(e.message, 'error'); }
 }
-async function _deleteTagLabel(labelId, label) {
-  if (!confirm(`Delete label "${label}"? This removes it from all papers.`)) return;
+let _delLabel = null;   // {id, label} while the delete-label box is open
+function _deleteTagLabel(labelId, label) {
+  _delLabel = {id: labelId, label};
+  document.getElementById('del-label-name').textContent = label;
+  const inp = document.getElementById('del-label-input'); inp.value = '';
+  _delLabelCheck(); openModal('del-label-modal'); setTimeout(() => inp.focus(), 50);
+}
+function _delLabelMatches() {   // capitals and spaces at the ends ignored (label names are unique ignoring capitals)
+  return !!_delLabel && document.getElementById('del-label-input').value.trim().toLowerCase() === _delLabel.label.trim().toLowerCase();
+}
+function _delLabelCheck() { document.getElementById('del-label-ok').disabled = !_delLabelMatches(); }
+async function _confirmDeleteTagLabel() {
+  if (!_delLabelMatches()) return;
+  const {id: labelId, label} = _delLabel; _delLabel = null; closeModal('del-label-modal');
   try {
     await gas('deleteTagLabel', labelId);
     _tagLabels = null;
@@ -3509,6 +3554,8 @@ async function _deleteTagLabel(labelId, label) {
     if (_tagPopoverEl) { _tagPopoverEl.remove(); _tagPopoverEl = null; }
     await loadPapers();
     renderSidebarTagFilter();
+    if (_currentPanel === 'paper') renderPaperViewTags();
+    notify(`Label "${label}" deleted everywhere`, 'success');
   } catch(e) { notify(e.message, 'error'); }
 }
 async function renderVennTagFilters() {
@@ -3544,8 +3591,8 @@ async function renderSidebarTagFilter() {
       ${l.user_id !== _currentUser ? `<span style="font-size:9px;color:var(--muted)">@${esc(l.user_id.substring(0,6))}</span>` : `<span class="side-tag-ctl">
         <span title="${l.is_private ? 'Private: click to share with everyone' : 'Shared: click to make private'}"
           onclick="event.stopPropagation();_toggleTagPrivate('${l.id}','${esc(l.label)}',${l.is_private ? 'false' : 'true'})">${l.is_private ? '🔒' : '👥'}</span>
-        <span title="Rename" onclick="event.stopPropagation();_editTagLabel('${l.id}','${esc(l.label)}','${l.color}')">✎</span>
-        <span title="Delete this label" style="color:var(--red)" onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>
+        <span title="Rename this label everywhere: every paper and note that has it shows the new name" onclick="event.stopPropagation();_editTagLabel('${l.id}','${esc(l.label)}','${l.color}')">✎</span>
+        <span title="Delete this label everywhere: takes it off every paper and note in all libraries" style="color:var(--red)" onclick="event.stopPropagation();_deleteTagLabel('${l.id}','${esc(l.label)}')">✕</span>
       </span>`}
     </div>`;
   }).join('');
@@ -3971,11 +4018,16 @@ function _hideSelHint() {
   if (hint) hint.style.display = 'none';
   clearTimeout(_selHintTimer);
 }
-// Alt+A in PDF canvas area = annotate selected text
+// H (no Ctrl/Alt/Cmd) with text selected in the PDF = highlight it (with an optional note and tags).
+// A bare letter is free in every browser on Windows and Mac. It only acts when text is selected in the PDF and
+// the typing focus is not in a box (note field, search box …), so an "h" typed anywhere else stays an "h".
 document.addEventListener('keydown', e => {
-  if (e.altKey && e.key === 'a') {
+  if (!e.ctrlKey && !e.altKey && !e.metaKey && (e.code === 'KeyH' || (e.key || '').toLowerCase() === 'h')) {
     const canvasArea = document.getElementById('pdf-canvas-area');
-    if (!canvasArea) return;
+    if (!canvasArea || !_selectionData || !_current) return;
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) return;
+    if (document.getElementById('selection-popup')?.classList.contains('visible')) return;
     e.preventDefault();
     _hideSelHint();
     // Handle _selectionData (main annotation system)
@@ -3987,8 +4039,9 @@ document.addEventListener('keydown', e => {
             ? _selectionData.quote.substring(0, 80) + '…'
             : _selectionData.quote;
         document.getElementById('selection-note').value = '';
-        popup.style.left = Math.max(8, (window.innerWidth  - 260) / 2) + 'px';
-        popup.style.top  = Math.max(8, (window.innerHeight - 130) / 2) + 'px';
+        _renderSelectionTagChips();
+        popup.style.left = Math.max(8, (window.innerWidth  - 320) / 2) + 'px';
+        popup.style.top  = Math.max(8, (window.innerHeight - 220) / 2) + 'px';
         popup.classList.add('visible');
         setTimeout(() => document.getElementById('selection-note')?.focus(), 50);
         return;
@@ -4087,7 +4140,7 @@ function clearSelectionPreview() {
 document.addEventListener('mousedown', e => {
   const hint = document.getElementById('sel-hint');
   if (hint && hint.style.display !== 'none') _hideSelHint();
-  // Clear grey preview on click unless it's the Alt+A popup
+  // Clear grey preview on click unless it's the highlight box (opened with H)
   const selPopup = document.getElementById('selection-popup');
   if (!selPopup?.classList.contains('visible')) clearSelectionPreview();
 });
@@ -4109,6 +4162,23 @@ function dismissSelectionPopup() {
   }
   _selectionData = null;
   window.getSelection()?.removeAllRanges();
+}
+let _selTagChoice = new Set();   // labels picked in the highlight box
+async function _renderSelectionTagChips() {
+  _selTagChoice = new Set();
+  const el = document.getElementById('selection-tags');
+  if (!el) return;
+  el.innerHTML = '<span style="font-size:10px;color:var(--muted)">…</span>';
+  const labels = await getTagLabelsCache();
+  el.innerHTML = labels.length
+    ? labels.map(l => `<span class="sel-tag-chip" data-id="${l.id}" data-color="${l.color}"
+        onclick="_toggleSelTag(this)">${esc(l.label)}${l.is_private ? ' 🔒' : ''}</span>`).join('')
+    : '<span style="font-size:10px;color:var(--muted)">No labels yet (create one with 🏷 Tag)</span>';
+}
+function _toggleSelTag(el) {
+  const id = el.dataset.id;
+  if (_selTagChoice.has(id)) { _selTagChoice.delete(id); el.classList.remove('on'); el.style.background = ''; }
+  else { _selTagChoice.add(id); el.classList.add('on'); el.style.background = el.dataset.color; }
 }
 async function saveSelectionAnnotation() {
   if (!_selectionData || !_current) return;
@@ -4140,7 +4210,13 @@ async function saveSelectionAnnotation() {
     _current.annotations = _current.annotations || [];
     _current.annotations.push(newAnn);
     _renderAnnotations(_current.annotations);
-    notify('Highlight saved', 'success', 1500);
+    const chosen = [..._selTagChoice];
+    for (const labelId of chosen) {
+      try { await gas('addPaperTag', _current.id, labelId, r.id); }
+      catch(err) { notify('Highlight saved, but a tag could not be added: ' + err.message, 'error'); }
+    }
+    notify(chosen.length ? `Highlight saved with ${chosen.length} tag${chosen.length > 1 ? 's' : ''}` : 'Highlight saved', 'success', 1800);
+    if (chosen.length) { _tagLabels = null; await loadPapers(); if (_currentPanel === 'paper') renderPaperViewTags(); }
     // Update only the affected pages' highlight canvases — no full re-render
     const affectedPages = [...new Set(_selectionData.rects.map(r => r.page || 1))];
     affectedPages.forEach(pg => {
@@ -4246,7 +4322,7 @@ function initTextSelection() {
         });
       }
     }
-    // Show hint — popup will appear on Alt+A
+    // Show hint — the highlight box appears when H is pressed
     _showSelHint();
     // Focus note input
     setTimeout(() => document.getElementById('selection-note').focus(), 50);
