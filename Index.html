@@ -1470,7 +1470,7 @@ async function loadPapers() {
 function applyFilter(f) {
   _filter = f;
   document.querySelectorAll('.sidebar-item[id^="filter-"]').forEach(el => el.classList.remove('active'));
-  const el = document.getElementById(`filter-${f}`);
+  const el = document.getElementById(`filter-${f.replace(/_/g, '-')}`);   // key_paper -> filter-key-paper
   if (el) el.classList.add('active');
   const q = (document.getElementById('library-search')?.value || '').trim();
   let filtered = _parseAndFilter(_papers, q, f);
