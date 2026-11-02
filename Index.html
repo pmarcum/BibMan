@@ -4183,43 +4183,45 @@ function _toggleSelTag(el) {
 }
 async function saveSelectionAnnotation() {
   if (!_selectionData || !_current) return;
+  // Keep our own copies: a click elsewhere, or a new selection, while this is saving clears or replaces _selectionData
+  // (that gave "Cannot read properties of null (reading 'rects')"), and the paper or the chosen tags could change too
+  const sel = _selectionData, paper = _current, chosen = [..._selTagChoice];
   const note = document.getElementById('selection-note').value.trim();
   const popup = document.getElementById('selection-popup');
   popup.classList.remove('visible');
   try {
     const r = await gas('createAnnotation', {
-      paper_id:        _current.id,
+      paper_id:        paper.id,
       text:            note || '',
       user_note:       note || '',
-      quote:           _selectionData.quote,
+      quote:           sel.quote,
       annotation_type: 'passage',
-      coords:          JSON.stringify(_selectionData.rects),
-      page_number:     _selectionData.rects[0]?.page || 1,
+      coords:          JSON.stringify(sel.rects),
+      page_number:     sel.rects[0]?.page || 1,
     });
     // Add to local cache
     const newAnn = {
       id:              r.id,
-      paper_id:        _current.id,
+      paper_id:        paper.id,
       annotation_type: 'passage',
       display_text:    note,
       user_note:       note,
-      quote:           _selectionData.quote,
-      rects:           _selectionData.rects,
-      page_number:     _selectionData.rects[0]?.page || 1,
+      quote:           sel.quote,
+      rects:           sel.rects,
+      page_number:     sel.rects[0]?.page || 1,
       username:        _currentUser,
     };
-    _current.annotations = _current.annotations || [];
-    _current.annotations.push(newAnn);
-    _renderAnnotations(_current.annotations);
-    const chosen = [..._selTagChoice];
+    paper.annotations = paper.annotations || [];
+    paper.annotations.push(newAnn);
+    if (_current === paper) _renderAnnotations(paper.annotations);
     for (const labelId of chosen) {
-      try { await gas('addPaperTag', _current.id, labelId, r.id); }
+      try { await gas('addPaperTag', paper.id, labelId, r.id); }
       catch(err) { notify('Highlight saved, but a tag could not be added: ' + err.message, 'error'); }
     }
     notify(chosen.length ? `Highlight saved with ${chosen.length} tag${chosen.length > 1 ? 's' : ''}` : 'Highlight saved', 'success', 1800);
-    if (chosen.length) { _tagLabels = null; await loadPapers(); if (_currentPanel === 'paper') renderPaperViewTags(); }
-    // Update only the affected pages' highlight canvases — no full re-render
-    const affectedPages = [...new Set(_selectionData.rects.map(r => r.page || 1))];
+    if (chosen.length) { _tagLabels = null; await loadPapers(); if (_currentPanel === 'paper' && _current === paper) renderPaperViewTags(); }
+    // Update only the affected pages' highlight canvases — no full re-render (only if this paper is still open)
+    const affectedPages = _current === paper ? [...new Set(sel.rects.map(r => r.page || 1))] : [];
     affectedPages.forEach(pg => {
       const container = document.getElementById(`pdf-page-${pg}`);
       if (!container) return;
@@ -4227,13 +4229,13 @@ async function saveSelectionAnnotation() {
       if (!hl) return;
       const ctx = hl.getContext('2d');
       ctx.clearRect(0, 0, hl.width, hl.height);
-      drawAnnotationHighlights(hl, pg, _current.annotations);
+      drawAnnotationHighlights(hl, pg, paper.annotations);
     });
   } catch(e) {
     notify(e.message, 'error');
     // Clear preview highlight even on failure
-    if (_selectionData && _pdfDoc) {
-      const pg = _selectionData.pageNum;
+    if (_pdfDoc && _current === paper) {
+      const pg = sel.pageNum;
       const container = document.getElementById(`pdf-page-${pg}`);
       if (container) {
         const hl = container.querySelector('.pdf-highlight-canvas');
@@ -4245,9 +4247,11 @@ async function saveSelectionAnnotation() {
       }
     }
   }
-  _selectionData = null;
-  document.getElementById('selection-note').value = '';
-  window.getSelection()?.removeAllRanges();
+  if (_selectionData === sel) {   // leave a new selection made while saving alone
+    _selectionData = null;
+    window.getSelection()?.removeAllRanges();
+  }
+  if (!document.getElementById('selection-popup').classList.contains('visible')) document.getElementById('selection-note').value = '';
 }
 // ── Text layer initialisation (called after renderPdfGrid) ───────────────────
 let _selectionListenerActive = false;

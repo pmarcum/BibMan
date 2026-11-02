@@ -9,6 +9,7 @@
 - **The ✕ on a note says what it deletes:** *Delete this highlight and its note*, or *Delete this paper note* (it said only *Delete*), and so does the question before deleting.
 - **Brighter counts in the left sidebar** (All Papers, Key Paper, Notes, Highlights, Pinned, Follow-up): they were nearly the colour of the background; now the same colour as their label, brightening with it on hover and turning blue with it when selected.
 - **Key Paper is marked when selected** in the left sidebar, like the other filters (it filtered correctly but its row never turned blue).
+- **Fixed: clicking elsewhere while a highlight was saving** gave an error ("Cannot read properties of null"): the highlight was saved but its tags were not added and it did not appear in the list until the page was reloaded. The save now keeps its own copy of the selected text, paper and tags.
 - Dashboard only (`Index.html`): no server or Apps Script change.
 
 ## 1 November 2026: search indexes kept up to date every night
