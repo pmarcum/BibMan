@@ -1,8 +1,8 @@
 {
   "bibman_core_library_version": 9,
-  "bibman_frontend_thinclient_webapp_version": 12,
+  "bibman_frontend_thinclient_webapp_version": 13,
   "bibman_bookmarklet_capture_webapp_version": 8,
   "bibman_core_library_notes": "v9: an access code (Script Property BIBMAN_ACCESS_CODE) and ADMIN_EMAILS replace the access sheet. Install it with Frontend Code.gs 12. In each web app: Libraries → BibManCore → select version 9, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v12: new Code.gs (access code instead of the access sheet); set the Script Properties BIBMAN_ACCESS_CODE and ADMIN_EMAILS first, select Core 9, redeploy",
+  "bibman_frontend_thinclient_webapp_notes": "v13: in Project Settings → appsscript.json, remove the line https://www.googleapis.com/auth/spreadsheets (no longer needed since Core 9), then redeploy (Code.gs unchanged)",
   "bibman_bookmarklet_capture_webapp_notes": "v8: select Core 9 and redeploy (Code.gs unchanged)"
 }

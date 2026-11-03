@@ -6,6 +6,7 @@
 - **Admins are listed in the Script Property `ADMIN_EMAILS`** (emails separated by commas) instead of the sheet's admin column.
 - **Core members, listed in `CORE_MEMBERS`, never need the access code**, and neither do admins: they are let in by their Google email. Changing the code doesn't affect them.
 - The bookmarklet and gooTeX are unchanged: the bookmarklet uses `GAS_CREDENTIAL`, gooTeX its read-only `EXPORT_CREDENTIAL`.
+- **The dashboard no longer asks for Google Sheets permission** (Frontend 13): it was needed only to read the access sheet.
 - Core library 9 and a new Frontend `Code.gs` (12), which must be installed together; Capture: select Core 9 and redeploy (its `Code.gs` is unchanged). A Frontend still on the old `Code.gs` with Core 9 lets nobody in and says it needs updating. No server or dashboard (`Index.html`) change.
 
 ## 2 November 2026: the same label on several notes of a paper
