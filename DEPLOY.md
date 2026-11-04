@@ -145,9 +145,10 @@ There is no list of people (since Core 9). Anyone signed in to Google who has th
 ### 2d. `BibMan_Bookmarklet_Capture_ThinClient_WebApp`
 
 1. New project → paste `Code.gs` and `appsscript.json`; replace the `libraryId` with your Core Script ID.
-2. Script Properties: `GAS_CREDENTIAL`, `DUCKDNS_URL`, `ADS_TOKEN`, `GEMINI_KEY` (same values as 2c), `BIBMAN_DASHBOARD_URL` (the dashboard URL from 2c), and `BOOKMARKLET_CAPTURE_VERSION` (`bibman_bookmarklet_capture_webapp_version` from `version.json`).
-3. **Deploy → New deployment → Web app**: *Execute as: Me*; *Who has access: Anyone*. (Bookmarklet clicks come from arbitrary web pages with no Google sign-in, which is why this one runs as you. Every request except the list of library names is checked against `GAS_CREDENTIAL`.)
-4. Put this web app's URL into the frontend's `BOOKMARKLET_CAPTURE_WEBAPP_URL` property.
+2. Script Properties: `GAS_CREDENTIAL`, `DUCKDNS_URL`, `ADS_TOKEN`, `GEMINI_KEY` (same values as 2c), `BIBMAN_DASHBOARD_URL` (the dashboard URL from 2c), `PDF_FOLDER_ID` (the same Drive folder as in 2c: this web app saves new papers' PDFs there, as you), and `BOOKMARKLET_CAPTURE_VERSION` (`bibman_bookmarklet_capture_webapp_version` from `version.json`).
+3. In the editor, run `authorizeDrive` once and allow the permissions. This web app saves new papers' PDFs into Drive as you, so Google needs your approval; until you give it, every bookmarklet click lands on a blank Google page whose address contains `createOAuthDialog=true`. `authorizeDrive` changes nothing; it also checks that the Drive API service is on (it is listed in the `appsscript.json` you pasted; if it says it is off, click **+** next to **Services**, choose **Drive API**, **Add**, and run it again).
+4. **Deploy → New deployment → Web app**: *Execute as: Me*; *Who has access: Anyone*. (Bookmarklet clicks come from arbitrary web pages with no Google sign-in, which is why this one runs as you. Every request except the list of library names is checked against `GAS_CREDENTIAL`.)
+5. Put this web app's URL into the frontend's `BOOKMARKLET_CAPTURE_WEBAPP_URL` property.
 
 When you change code later, use **Deploy → Manage deployments → Edit → New version** rather than a new deployment, so the dashboard URL and everyone's bookmarklet keep working.
 

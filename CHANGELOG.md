@@ -1,5 +1,15 @@
 # Changelog
 
+## 3 November 2026: PDFs reach Drive again (Core 10)
+
+- **New papers' PDFs are saved to Drive again.** The server handed them to the dashboard's web app, which runs as the person using it and refused the server (`401 Unauthorized`), so no PDF had reached Drive for a while (they still displayed, fetched from their source). Apps Script now tells the server the bookmarklet's web app instead, which runs as the owner; it saves the PDF in `BibMan_PDFs/<library>/` as before. The bookmarklet project needs the Script Property `PDF_FOLDER_ID`.
+- **PDFs over 40 MB are not handed over** (Apps Script can't take much more in one request); the log names them.
+- **One-time checks, run from the bookmarklet project's editor:** `checkPdfLinks` / `fixPdfLinks` (PDFs in `BibMan_PDFs` not viewable by link), and `resavePdfsCheck` / `resavePdfsStart` (papers with a PDF but no Drive copy: an existing Drive file of the same name is linked, otherwise the PDF is fetched again and saved, one paper every 10 seconds; a report is written next to the database). See MAINTENANCE.md, "PDFs in Drive".
+- **Stored PDF links go through the Cloudflare Worker first** in the PDF viewer (as arXiv PDFs already did), which spares the VM's outbound data; the VM fetches the PDF only if the Worker can't.
+- **The bookmarklet project now needs your approval for Drive** (it saves the PDFs as you) **and the Drive API service.** Run `authorizeDrive` once in its editor and allow the permissions; it also says whether the Drive API service is on. Until then every bookmarklet click lands on a blank Google page (`createOAuthDialog=true` in its address).
+- **The bookmarklet button can no longer be dragged too early.** In **Utilities → Bookmarklet** the button used to be draggable before its code had arrived; dragging it then saved the dashboard's own page address, and clicking that bookmark opened a blank Google page (`…googleusercontent.com/userCodeAppPanel?createOAuthDialog=true#`). It now shows *Preparing bookmarklet…* (greyed out, not draggable) until the code is there, says so if it can't be prepared (click it to try again), and starts preparing as soon as the Utilities menu opens.
+- Server (`bibman_e2micro_server.py`), Core 10, bookmarklet `Code.gs` and `appsscript.json` (capture version 10), dashboard (`Index.html`); the dashboard's `Code.gs` is unchanged (select Core 10, version 14).
+
 ## 2 November 2026: an access code instead of the access sheet (Core 9)
 
 - **No list of people any more.** The dashboard is open to anyone signed in to Google who has its link and the group's **access code** (Script Property `BIBMAN_ACCESS_CODE` in the Frontend project); the `allowed_users` sheet is no longer read. Each person types the code once (or it is in the link as `?access=CODE`) and BibMan remembers it for them, as a fingerprint, not the code itself, until the code is changed; then everyone is asked once for the new one. Every dashboard action checks the current code, so a change takes effect at once. Capitals count; spaces at either end are ignored; with no code set, nobody gets in.

@@ -17,6 +17,13 @@
  *   EMBED_MODEL          — optional, default: models/gemini-embedding-001
  *   GENERATE_MODEL       — optional, default: models/gemini-2.0-flash
  *   BIBMAN_DASHBOARD_URL — the BibMan_ThinClient_WebApp URL (for bookmarklet)
+ *   PDF_FOLDER_ID        — Drive folder ID of BibMan_PDFs (same value as in the dashboard project): new papers'
+ *                          PDFs are saved there by this web app, as you (Core 10)
+ *
+ * First run, and after any update that needs new access: in the editor, choose authorizeDrive and click Run, and
+ * allow the permissions. Until you approve, every bookmarklet click lands on a blank Google page whose address
+ * contains createOAuthDialog=true. The project also needs the Drive API service (Services → + → Drive API, v3,
+ * identifier Drive; included in appsscript.json for new installs); authorizeDrive says if it is missing.
  *
  * Keeping up to date:
  *   The dashboard will show a banner when a capture webapp update is available.
@@ -45,6 +52,7 @@ function _cfg() {
     embedModel:                p.getProperty('EMBED_MODEL')                || 'models/gemini-embedding-001',
     generateModel:             p.getProperty('GENERATE_MODEL')             || 'models/gemini-2.0-flash',
     captureUrl:                ScriptApp.getService().getUrl(),
+    pdfFolderId:               p.getProperty('PDF_FOLDER_ID')              || '',
     dashUrl:                   p.getProperty('BIBMAN_DASHBOARD_URL')       || '',
     // Version info — compared against version.json on GitHub by BibMan_Core
     bookmarkletCaptureVersion: parseInt(p.getProperty('BOOKMARKLET_CAPTURE_VERSION'), 10) || 1,
@@ -55,3 +63,33 @@ function _cfg() {
 
 // ── Web app entry point ────────────────────────────────────────────────────────
 function doPost(e) { return BibManCore.captureDoPost(_cfg(), e); }
+
+// ── One-time PDF check (run from the editor: select the function, then Run; results in the Execution log) ──
+// checkPdfLinks lists the PDFs in BibMan_PDFs that are not "viewable by anyone with the link" and changes nothing;
+// fixPdfLinks switches them. Both stop after about 5 minutes; run fixPdfLinks again to carry on.
+function checkPdfLinks() { return BibManCore.checkPdfLinks(_cfg(), false); }
+function fixPdfLinks()   { return BibManCore.checkPdfLinks(_cfg(), true); }
+// resavePdfsCheck shows the papers whose PDF never reached Drive (and the progress of a running re-save), changing
+// nothing; resavePdfsStart has the server re-save them in the background (one paper every 10 s).
+function resavePdfsCheck() { return BibManCore.resaveMissingPdfs(_cfg(), false); }
+function resavePdfsStart() { return BibManCore.resaveMissingPdfs(_cfg(), true); }
+
+// ── Approve Drive access (run once from the editor: select authorizeDrive, then Run; changes nothing) ─────────────
+// This web app saves new papers' PDFs into Drive as you, so Google needs your approval first. authorizeDrive opens the
+// PDF folder (which makes Google ask), checks that the Drive API service is on (checkPdfLinks needs it), and says so.
+function authorizeDrive() {
+  const id = PropertiesService.getScriptProperties().getProperty('PDF_FOLDER_ID');
+  if (!id) throw new Error('PDF_FOLDER_ID is not set: add it in Project Settings → Script Properties (same value as in the dashboard project)');
+  const folder = DriveApp.getFolderById(id);
+  const r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id)&q=' +
+                              encodeURIComponent("'" + id + "' in parents and trashed=false"),
+                              { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  const code = r.getResponseCode();
+  const api = code === 200 ? 'the Drive API is on'
+            : (code === 403 && /has not been used|is disabled|SERVICE_DISABLED/.test(r.getContentText()))
+              ? 'the Drive API is OFF: click + next to Services, choose Drive API (v3, identifier Drive), click Add, then run authorizeDrive again'
+              : 'the Drive API check failed (HTTP ' + code + '): ' + r.getContentText().slice(0, 200);
+  const text = 'Drive access approved; PDF folder "' + folder.getName() + '" found; ' + api + '.';
+  Logger.log(text);
+  return text;
+}

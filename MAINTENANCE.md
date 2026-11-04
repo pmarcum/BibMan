@@ -44,7 +44,7 @@ To check the nightly trigger: open the Frontend project → **Triggers** (clock 
 
 ## How the dashboard reaches the server
 
-Every dashboard action, including Venn Search (since Core 4), goes from the browser to Apps Script, and Apps Script calls the VM server-to-server. Browsers never connect to the VM's address directly. This matters because many workplace and campus networks block dynamic-DNS names such as `*.duckdns.org` (their DNS sends the name to a dead-end address), which breaks any feature that needs a direct browser connection. The exceptions are PDF display: Drive copies are fetched by the browser from Google Drive, and arXiv PDFs through the Cloudflare Worker.
+Every dashboard action, including Venn Search (since Core 4), goes from the browser to Apps Script, and Apps Script calls the VM server-to-server. Browsers never connect to the VM's address directly. This matters because many workplace and campus networks block dynamic-DNS names such as `*.duckdns.org` (their DNS sends the name to a dead-end address), which breaks any feature that needs a direct browser connection. The exceptions are PDF display: Drive copies are fetched by the browser from Google Drive, and arXiv PDFs (and, since Core 10, other stored PDF links, with the VM as the fallback) through the Cloudflare Worker.
 
 A request through Apps Script must finish within about a minute, but a large Venn Search can take longer on an e2-micro. So Venn Search runs as a background job on the server (`/api/search/venn/start`, then `/api/search/venn/result/<id>`): Apps Script starts it and waits up to 5 seconds; if it isn't finished, the dashboard shows "Still searching" and keeps asking, up to 40 seconds per request. Agreed limits:
 - **2 minutes per search** (`VENN_JOB_MAX_SECONDS` in the server). After that the search is stopped on the server (its database work is interrupted) and the dashboard reports a timeout. If searches time out, try fewer or more specific terms, or a lower **Max results**.
@@ -173,6 +173,7 @@ Current versions (29 October 2026): Core library **8** (version number in code; 
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project (for a Core change, first set `BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs` to the number the new deployment will get), and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
+   If the new code needs access the project didn't have before (for example Drive), run a function in that project's editor once and allow the permissions; until then the web app answers every request with a blank Google page whose address contains `createOAuthDialog=true` (a bookmarklet click just lands on that page). In the bookmarklet project, run `authorizeDrive`.
 2. For a Core change: in **each** web app, open **Libraries → BibManCore**, select the new Core version, then redeploy that web app the same way. A web app's live deployment is a snapshot: changing the library setting in the editor has no effect until the web app is redeployed.
 3. Set each changed web app's Script Property to its new deployment number (the Core number is already in its code).
 4. **Then** update the matching numbers and `…_notes` in `version.json` on `main`. In this order no instance shows a false "update available" banner; the other order shows one until the property is updated.
@@ -206,7 +207,7 @@ This lists any such file that other accounts can still read. An empty result is 
 
 Since 2 November 2026 (Core 9) there is no list of people: the dashboard is open to anyone signed in to Google who has the **dashboard link** and the **access code** (Script Property `BIBMAN_ACCESS_CODE` in the **Frontend** project). Each person enters the code once, in the box BibMan shows or in the link as `?access=CODE`, and BibMan remembers it for them until the code changes. Capitals count; spaces at either end are ignored. If no code is set, nobody can open the dashboard.
 
-**To add someone:** send them the dashboard link and the access code. They install the bookmarklet themselves from **Utilities → Bookmarklet**.
+**To add someone:** send them the dashboard link and the access code. They install the bookmarklet themselves from **Utilities → Bookmarklet**. If clicking someone's bookmarklet opens a blank Google page (`…googleusercontent.com/userCodeAppPanel…#`), that bookmark holds the dashboard's page address instead of the bookmarklet (it was dragged before the button was ready, which the dashboard prevents since 5 November 2026): delete it and drag a new one. A real bookmarklet's address starts with `javascript:`.
 
 **Admins** (who see the **Admin** menu) are the Google emails listed, separated by commas, in the Frontend's Script Property `ADMIN_EMAILS`.
 
@@ -231,9 +232,17 @@ If gooTeX shares the server and still uses `GAS_CREDENTIAL` rather than its own 
 - **`SESSION_SECRET`**: change it in `bibman.service` and restart.
 - **ADS token / Gemini key**: change the Script Properties in the Frontend and Capture projects. Nothing on the server stores them.
 
+## PDFs in Drive
+
+When a paper is added and its PDF can be downloaded, the server saves a copy in `BibMan_PDFs/<library>/<bibkey>.pdf` on the owner's Drive, viewable by anyone with the link, so it opens for every BibMan user without sharing the folder. The server hands the PDF to the **bookmarklet's** web app (it runs as the owner and needs no Google sign-in; it needs the Script Property `PDF_FOLDER_ID`); Apps Script tells the server that address with every request. Until Core 10 the server handed PDFs to the dashboard's web app, which refused them (`401 Unauthorized` in the log), so papers added then have no Drive copy. A PDF with the same name already in that folder is replaced (the old one goes to the Trash). PDFs over 40 MB are not saved (Apps Script can't take much more in one request); the log says so, and they stay readable from their source.
+
+- **Approval first:** the bookmarklet project saves the PDFs as you, so it needs your approval for Drive and the **Drive API** service. Run `authorizeDrive` in its editor once and allow the permissions; it changes nothing and says whether the Drive API service is on. Signs that this is missing: bookmarklet clicks land on a blank Google page with `createOAuthDialog=true` in its address (not approved), or `checkPdfLinks` stops with "Google Drive API has not been used in project … or it is disabled" (service missing: click **+** next to **Services**, choose **Drive API**, **Add**).
+- **Viewable by link:** in the bookmarklet project's editor, run `checkPdfLinks` (lists the PDFs in `BibMan_PDFs` and its subfolders that are not viewable by link; changes nothing), then `fixPdfLinks` to switch them. Results are in the Execution log; files owned by someone else are listed rather than changed. Each run stops after about 5 minutes; run `fixPdfLinks` again to carry on.
+- **Papers with no Drive copy:** in the same editor, `resavePdfsCheck` shows how many papers have a PDF but no Drive copy (and the progress of a running re-save); `resavePdfsStart` has the server re-save them in the background, one paper every 10 seconds: a PDF of the same name already in Drive is linked, otherwise the PDF is fetched again from its stored link and saved. PDFs over 40 MB are skipped and listed. The report is written next to the database (`bibman_resave_pdfs_<date>.txt`). Running it again only handles what is still missing.
+
 ## The PDF proxy Worker
 
-arXiv PDFs reach the dashboard through a Cloudflare Worker (`CF_WORKER_URL` in the frontend's Script Properties). It lives in whichever Cloudflare account created it, which may not be the one that runs your tunnel; the `….<subdomain>.workers.dev` part of its address identifies the account. Its source is [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js). It only answers requests whose path starts with its `PROXY_KEY` secret, which is also the last part of `CF_WORKER_URL`; to change the key, update both. To change it: Workers & Pages → the Worker → **Edit code** → paste → **Deploy**.
+arXiv PDFs, and since Core 10 any other stored PDF link (with the VM fetching it if the Worker can't), reach the dashboard through a Cloudflare Worker (`CF_WORKER_URL` in the frontend's Script Properties). It lives in whichever Cloudflare account created it, which may not be the one that runs your tunnel; the `….<subdomain>.workers.dev` part of its address identifies the account. Its source is [`cloudflare_worker/worker.js`](cloudflare_worker/worker.js). It only answers requests whose path starts with its `PROXY_KEY` secret, which is also the last part of `CF_WORKER_URL`; to change the key, update both. To change it: Workers & Pages → the Worker → **Edit code** → paste → **Deploy**.
 
 ## TLS certificate
 

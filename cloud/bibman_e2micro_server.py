@@ -1382,6 +1382,26 @@ def get_drive_service():
         return build('drive', 'v3', credentials=creds)
     raise RuntimeError('GOOGLE_SERVICE_ACCOUNT_JSON not configured')
 
+# PDFs bigger than this are not handed to Apps Script for saving in Drive (it can't take much more in one request);
+# they stay readable from their source, and the log (or the re-save report) lists them to be added by hand.
+MAX_DRIVE_PDF_BYTES = 40 * 1024 * 1024
+
+def find_pdf_via_gas(filename: str, library_name: str = ''):
+    """Drive file ID of BibMan_PDFs/<library>/<filename> if it is already there, '' if not, None if the check failed.
+    Asks the same Apps Script web app that saves PDFs (Core 10 action find_pdf)."""
+    gas_url = CONFIG.get('gas_webapp_url', '').strip() or os.environ.get('GAS_WEBAPP_URL', '').strip()
+    if not gas_url:
+        return None
+    try:
+        r = requests.post(gas_url, json={'action': 'find_pdf', 'credential': GAS_CREDENTIAL, 'filename': filename,
+                                         'library_name': library_name}, timeout=60, allow_redirects=True)
+        r.raise_for_status()
+        j = r.json()
+        return (j.get('file_id') or '') if j.get('ok') else None
+    except Exception as e:
+        log.warning(f'find_pdf_via_gas failed for {filename}: {e}')
+        return None
+
 def upload_pdf_via_gas(pdf_bytes: bytes, filename: str,
                         library_name: str = '') -> str | None:
     """
@@ -1395,6 +1415,10 @@ def upload_pdf_via_gas(pdf_bytes: bytes, filename: str,
     credential = GAS_CREDENTIAL
     if not gas_url:
         log.warning('upload_pdf_via_gas: GAS_WEBAPP_URL not set in environment')
+        return None
+    if len(pdf_bytes) > MAX_DRIVE_PDF_BYTES:   # Apps Script can't take much more in one hand-off (agreed 3 Nov 2026)
+        log.warning(f'upload_pdf_via_gas: {filename} not saved to Drive: {len(pdf_bytes) / 2**20:.1f} MB is over the '
+                    f'{MAX_DRIVE_PDF_BYTES // 2**20} MB limit (add it to Drive by hand)')
         return None
     try:
         pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
@@ -1436,6 +1460,92 @@ def upload_pdf_via_gas(pdf_bytes: bytes, filename: str,
 
 
 _CRON_RUNNING = False  # simple lock to prevent simultaneous cron runs
+
+# ── Re-save PDFs that never reached Drive (3 Nov 2026) ─────────────────────────────────────────────────────────
+# Papers whose text was extracted from a PDF but which have no Drive copy (the Drive hand-off was failing). Started
+# from the bookmarklet project's editor (resavePdfsCheck / resavePdfsStart). For each paper: if a PDF of its name is
+# already in BibMan_PDFs/<library>/, that file is linked; otherwise the PDF is fetched again from its stored link
+# and saved. One paper every RESAVE_PAUSE_SECONDS (agreed: 10); PDFs over MAX_DRIVE_PDF_BYTES are skipped and listed.
+# Safe to run again: papers that now have a Drive copy are no longer candidates. Report next to the database.
+RESAVE_PAUSE_SECONDS = 10
+_RESAVE = {'running': False, 'done': 0, 'total': 0, 'started': ''}
+RESAVE_WHERE = ("COALESCE(p.file_id,'') = '' AND p.pdf_extracted = 1 AND p.content_source_url LIKE 'http%' "
+                "AND p.content_source_url NOT LIKE 'https://arxiv.org/abs/%'")
+
+def _resave_candidates(conn):
+    return conn.execute(f'SELECT p.id, p.bibkey, p.bibcode, p.content_source_url, l.name AS library FROM papers p '
+                        f'JOIN libraries l ON l.id = p.library_id WHERE {RESAVE_WHERE} ORDER BY l.name, p.bibkey').fetchall()
+
+def _resave_job(rows):
+    linked, saved, too_big, failed = [], [], [], []
+    report = DB_PATH.parent / f'bibman_resave_pdfs_{datetime.now(timezone.utc):%Y%m%d_%H%M}.txt'
+    for i, r in enumerate(rows):
+        name = (r['bibkey'] or r['bibcode'] or r['id']) + '.pdf'
+        label = f'{r["library"]}/{name}'
+        try:
+            fid = find_pdf_via_gas(name, r['library'])
+            if fid is None:
+                failed.append(f'{label}: could not check Drive'); continue
+            if not fid:
+                content, kind = fetch_url_content(r['content_source_url'])
+                if not content or kind != 'pdf':
+                    failed.append(f'{label}: no PDF at {r["content_source_url"]}')
+                elif len(content) > MAX_DRIVE_PDF_BYTES:
+                    too_big.append(f'{label}: {len(content) / 2**20:.1f} MB ({r["content_source_url"]})')
+                else:
+                    fid = upload_pdf_via_gas(content, name, r['library'])
+                    if not fid:
+                        failed.append(f'{label}: saving to Drive failed (see the log)')
+                    else:
+                        saved.append(label)
+            else:
+                linked.append(label)
+            if fid:
+                c = get_db_connection()
+                c.execute('UPDATE papers SET file_id=?, content_source_url=? WHERE id=? AND COALESCE(file_id,\'\')=\'\'',
+                          (fid, f'drive:{fid}', r['id']))
+                c.commit(); c.close()
+        except Exception as e:
+            failed.append(f'{label}: {e}')
+        finally:
+            _RESAVE['done'] = i + 1
+        if i + 1 < len(rows):
+            time.sleep(RESAVE_PAUSE_SECONDS)
+    lines = [f'Re-save of PDFs missing from Drive, {_RESAVE["started"]} UTC: {len(rows)} papers',
+             f'linked to a PDF already in Drive: {len(linked)}', f'fetched again and saved: {len(saved)}',
+             f'skipped, over {MAX_DRIVE_PDF_BYTES // 2**20} MB (add by hand): {len(too_big)}', *['  ' + x for x in too_big],
+             f'failed: {len(failed)}', *['  ' + x for x in failed]]
+    try:
+        report.write_text('\n'.join(lines) + '\n')
+    except Exception as e:
+        log.warning(f're-save: could not write the report: {e}')
+    log.info(f're-save of missing PDFs finished: {len(linked)} linked, {len(saved)} saved, {len(too_big)} too big, '
+             f'{len(failed)} failed; report {report.name}')
+    _RESAVE['running'] = False
+
+@app.route('/api/admin/resave-pdfs', methods=['GET', 'POST'])
+@gas_auth_required
+def resave_pdfs():
+    """GET: what a re-save would do (counts per library, first 100 papers); changes nothing.
+    POST: start it in the background (one at a time); progress in the log, results in a report next to the database."""
+    conn = get_db_connection()
+    rows = _resave_candidates(conn)
+    conn.close()
+    by_lib = Counter(r['library'] for r in rows)
+    status = {k: _RESAVE[k] for k in ('running', 'done', 'total', 'started')}
+    if request.method == 'GET':
+        return jsonify({'candidates': len(rows), 'by_library': dict(by_lib), 'pause_seconds': RESAVE_PAUSE_SECONDS,
+                        'max_mb': MAX_DRIVE_PDF_BYTES // 2**20, 'job': status,
+                        'papers': [f'{r["library"]}/{r["bibkey"]}  <- {r["content_source_url"]}' for r in rows[:100]]})
+    if _RESAVE['running']:
+        return jsonify({'ok': False, 'error': f'a re-save is already running ({_RESAVE["done"]} of {_RESAVE["total"]} done)', 'job': status}), 409
+    if not rows:
+        return jsonify({'ok': True, 'started': False, 'message': 'nothing to re-save'})
+    _RESAVE.update(running=True, done=0, total=len(rows), started=f'{datetime.now(timezone.utc):%Y-%m-%d %H:%M}')
+    threading.Thread(target=_resave_job, args=(rows,), daemon=True, name='resave-pdfs').start()
+    log.info(f're-save of missing PDFs started: {len(rows)} papers, one every {RESAVE_PAUSE_SECONDS} s')
+    return jsonify({'ok': True, 'started': True, 'papers': len(rows),
+                    'minutes': round(len(rows) * RESAVE_PAUSE_SECONDS / 60)})
 
 @app.route('/api/cron/run', methods=['POST'])
 @gas_auth_required
@@ -2762,7 +2872,12 @@ def get_pdf_info(paper_id):
         return jsonify({'type': 'arxiv', 'url': source_url})
 
     if source_url:
-        return jsonify({'type': 'proxy', 'url': f'/api/papers/{paper_id}/pdf'})
+        # source_url: the stored link, which the dashboard tries through the Cloudflare Worker first (spares the VM's
+        # outbound data); the VM's /pdf route stays the fallback
+        out = {'type': 'proxy', 'url': f'/api/papers/{paper_id}/pdf'}
+        if source_url.startswith(('https://', 'http://')):
+            out['source_url'] = source_url
+        return jsonify(out)
 
     return jsonify({'type': 'none'})
 

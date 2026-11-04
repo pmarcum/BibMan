@@ -10,6 +10,13 @@
         "libraryId": "REPLACE_WITH_YOUR_CORE_LIBRARY_SCRIPT_ID",
         "developmentMode": false
       }
+    ],
+    "enabledAdvancedServices": [
+      {
+        "userSymbol": "Drive",
+        "version": "v3",
+        "serviceId": "drive"
+      }
     ]
   },
   "webapp": {

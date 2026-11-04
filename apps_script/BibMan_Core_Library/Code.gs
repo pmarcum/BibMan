@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 9;
+const BIBMAN_CORE_LIBRARY_VERSION = 10;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -457,7 +457,9 @@ function apiCall(config, method, path, body, params) {
     headers: {
       'X-BibMan-Credential': resolved.credential,
       'X-BibMan-User':       (() => { try { return Session.getActiveUser().getEmail() || ''; } catch(e) { return ''; } })(),
-      'X-GAS-Webapp-URL':    config.dashUrl || ScriptApp.getService().getUrl(),
+      // Where the server sends PDFs to be saved in Drive (Core 10): the bookmarklet's web app, which runs as the owner
+      // and needs no Google sign-in. The dashboard's web app runs as the person using it and refuses the server (401).
+      'X-GAS-Webapp-URL':    config.captureUrl || config.dashUrl || ScriptApp.getService().getUrl(),
       'X-ADS-Token':         resolved.adsToken      || '',
       'X-Gemini-Key':        resolved.geminiKey     || '',
       'X-Embed-Model':       resolved.embedModel,
@@ -1006,6 +1008,95 @@ function savePdfToDrive(config, base64Bytes, filename, libraryName) {
 }
 
 /**
+ * findPdfInDrive: the Drive file ID of BibMan_PDFs/<library>/<filename> (not in Trash), or '' if there is none.
+ * Used by the re-save script so a PDF already in Drive is linked rather than saved a second time (Core 10).
+ */
+function findPdfInDrive(config, filename, libraryName) {
+  if (!config.pdfFolderId) { throw new Error('pdfFolderId not provided in config (PDF_FOLDER_ID Script Property)'); }
+  const sub = DriveApp.getFolderById(config.pdfFolderId).getFoldersByName((libraryName || 'Default').trim());
+  if (!sub.hasNext()) return { ok: true, file_id: '' };
+  const files = sub.next().getFilesByName(filename);
+  while (files.hasNext()) { const f = files.next(); if (!f.isTrashed()) return { ok: true, file_id: f.getId() }; }
+  return { ok: true, file_id: '' };
+}
+
+/**
+ * resaveMissingPdfs: papers whose PDF never reached Drive (Core 10). With start=false it shows what a re-save would do
+ * and how a running one is getting on (nothing changes); with start=true the server starts it in the background.
+ * Run from the bookmarklet project's editor (resavePdfsCheck / resavePdfsStart); results in the Execution log.
+ */
+function resaveMissingPdfs(config, start) {
+  const r = apiCall(config, start ? 'POST' : 'GET', '/api/admin/resave-pdfs');
+  let text;
+  if (!start) {
+    const lib = Object.keys(r.by_library || {}).map(function(k) { return '  ' + k + ': ' + r.by_library[k]; }).join('\n');
+    const job = r.job || {};
+    text = 'Papers with a PDF but no Drive copy: ' + r.candidates + (lib ? '\n' + lib : '') +
+           '\nA re-save takes one paper every ' + r.pause_seconds + ' s (about ' + Math.round(r.candidates * r.pause_seconds / 60) +
+           ' minutes); PDFs over ' + r.max_mb + ' MB are skipped and listed.' +
+           (job.running ? '\nA re-save started ' + job.started + ' UTC is running: ' + job.done + ' of ' + job.total + ' done.' : '') +
+           ((r.papers || []).length ? '\nFirst ' + r.papers.length + ':\n  ' + r.papers.join('\n  ') : '');
+  } else {
+    text = r.started ? 'Re-save started: ' + r.papers + ' papers, about ' + r.minutes + ' minutes. Run resavePdfsCheck to see progress; ' +
+                       'the report is written next to the database when it finishes.' : (r.message || r.error || JSON.stringify(r));
+  }
+  Logger.log(text); console.log(text);
+  return r;
+}
+
+/**
+ * checkPdfLinks: the one-time "viewable by link" check of BibMan_PDFs and all its subfolders (Core 10).
+ * Run from the bookmarklet project's editor (checkPdfLinks / fixPdfLinks). With apply=false it only lists the PDFs
+ * that are not viewable by anyone with the link; with apply=true it switches them to "anyone with the link can view".
+ * Files it may not change (e.g. owned by someone else) are listed instead. It stops itself after about 5 minutes
+ * (Apps Script allows 6) and says so; running it again carries on where it stopped.
+ */
+function checkPdfLinks(config, apply) {
+  if (!config.pdfFolderId) { throw new Error('PDF_FOLDER_ID is not set in this project\'s Script Properties'); }
+  const t0 = Date.now(), BUDGET = 5 * 60 * 1000;
+  const token = ScriptApp.getOAuthToken();
+  const list = function(q) {
+    let out = [], page = '';
+    do {
+      const url = 'https://www.googleapis.com/drive/v3/files?pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true' +
+                  '&fields=' + encodeURIComponent('nextPageToken,files(id,name,owners(emailAddress))') +
+                  '&q=' + encodeURIComponent(q) + (page ? '&pageToken=' + encodeURIComponent(page) : '');
+      const r = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+      if (r.getResponseCode() !== 200) throw new Error('Drive search failed: HTTP ' + r.getResponseCode() + ' ' + r.getContentText().slice(0, 200));
+      const j = JSON.parse(r.getContentText()); out = out.concat(j.files || []); page = j.nextPageToken || '';
+    } while (page);
+    return out;
+  };
+  // every folder under BibMan_PDFs, then the PDFs in each that are not viewable by link
+  const folders = [{ id: config.pdfFolderId, path: 'BibMan_PDFs' }];
+  for (let i = 0; i < folders.length; i++) {
+    list("'" + folders[i].id + "' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'")
+      .forEach(function(f) { folders.push({ id: f.id, path: folders[i].path + '/' + f.name }); });
+  }
+  const priv = [];
+  folders.forEach(function(fo) {
+    list("'" + fo.id + "' in parents and trashed=false and mimeType='application/pdf' and visibility='limited'")
+      .forEach(function(f) { priv.push({ id: f.id, name: f.name, path: fo.path, owner: ((f.owners || [])[0] || {}).emailAddress || '?' }); });
+  });
+  const lines = ['BibMan_PDFs: ' + folders.length + ' folders checked; ' + priv.length + ' PDF(s) not viewable by link' +
+                 (apply ? '' : ' (nothing changed: run fixPdfLinks to switch them)')];
+  let changed = 0; const failed = [], notDone = [];
+  priv.forEach(function(f) {
+    if (!apply) { lines.push('  ' + f.path + '/' + f.name + '   (owner ' + f.owner + ')'); return; }
+    if (Date.now() - t0 > BUDGET) { notDone.push(f); return; }
+    try { DriveApp.getFileById(f.id).setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); changed++; }
+    catch (e) { failed.push(f.path + '/' + f.name + '   (owner ' + f.owner + '): ' + e.message); }
+  });
+  if (apply) {
+    lines.push('switched to "anyone with the link can view": ' + changed);
+    if (failed.length) { lines.push('could not be changed (' + failed.length + '):'); failed.forEach(function(x) { lines.push('  ' + x); }); }
+    if (notDone.length) lines.push('stopped after 5 minutes with ' + notDone.length + ' still to do: run fixPdfLinks again to carry on');
+  }
+  const text = lines.join('\n'); Logger.log(text); console.log(text);
+  return { folders: folders.length, not_viewable: priv.length, changed: changed, failed: failed.length, remaining: notDone.length };
+}
+
+/**
  * exportBibText: Returns raw .bib content as a string.
  * Used by GooTeX loopback (no Drive write needed).
  */
@@ -1310,6 +1401,16 @@ function captureDoPost(config, e) {
         } catch(err) {
           return { error: err.message };
         }
+      }
+      // ── upload_pdf: the server hands over a PDF to save in BibMan_PDFs/<library>/ (Core 10) ──
+      if (data.action === 'upload_pdf') {
+        try { return savePdfToDrive(config, data.pdf_base64, data.filename, data.library_name || ''); }
+        catch(err) { return { ok: false, error: err.message }; }
+      }
+      // ── find_pdf: is a PDF of this name already in BibMan_PDFs/<library>/? (used when re-saving) ──
+      if (data.action === 'find_pdf') {
+        try { return findPdfInDrive(config, data.filename, data.library_name || ''); }
+        catch(err) { return { ok: false, error: err.message }; }
       }
       // ── save_captured ─────────────────────────────────────────────────────
       if (data.action === 'save_captured') {

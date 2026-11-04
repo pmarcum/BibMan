@@ -353,6 +353,10 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
 /* ── Utilities panel ── */
 #panel-utils{flex-direction:column;overflow-y:auto;padding:20px;gap:14px}
 .util-card-hidden{display:none!important}
+/* Bookmarklet button: not draggable until it holds the real bookmarklet code (an early drag saved a useless bookmark) */
+.bm-wait{opacity:.45;cursor:wait!important}
+.bm-status{font-size:11px;color:var(--muted);margin-top:6px;min-height:14px}
+.bm-status.bm-error{color:#f77e7e}
 .util-card{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:14px}
 .util-card h3{font-family:var(--mono);font-size:11px;letter-spacing:.08em;
               text-transform:uppercase;color:var(--accent);margin-bottom:6px}
@@ -1024,13 +1028,14 @@ or add new database">?</span>
       <h3>Bookmarklet</h3>
       <p>Install a browser button to add papers from ADS, arXiv, or journal sites with one click.</p>
       <div style="text-align:center;margin:12px 0">
-        <a href="#" id="bookmarklet-link"
+        <a id="bookmarklet-link" class="bm-wait" draggable="false"
           title="Add to BibMan"
           style="display:inline-block;padding:8px 16px;background:var(--accent);
                  color:var(--bg);text-decoration:none;border-radius:6px;
                  font-family:var(--mono);font-size:12px;font-weight:600;
                  cursor:move;border:2px dashed rgba(255,255,255,.3)"
-          onclick="event.preventDefault();alert('Drag this button to your bookmarks bar!')">Add to BibMan</a>
+          onclick="bookmarkletButtonClick(event)">Preparing bookmarklet…</a>
+        <div id="bookmarklet-status" class="bm-status"></div>
       </div>
       <div style="font-size:11px;color:var(--muted);line-height:1.6">
         <strong>Install:</strong> Drag the button above to your bookmarks bar.<br>
@@ -1727,6 +1732,14 @@ async function loadPdf() {
       };
     } else {
       placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching PDF…</div>';
+      // A stored link is tried through the Cloudflare Worker first, which spares the VM's outbound data; if the
+      // Worker can't get a PDF there (a web page instead of a PDF, a site that refuses it), the VM fetches it as before.
+      let viaWorker = null;
+      if (_cfWorker && info.source_url) {
+        try { viaWorker = await pdfjsLib.getDocument({ url: `${_cfWorker}?url=${encodeURIComponent(info.source_url)}` }).promise; }
+        catch (werr) { console.log('PDF through the Worker failed, fetching it through the server instead:', werr && werr.message); }
+      }
+      if (viaWorker) { await renderPdfGrid(viaWorker); return; }
       const b64 = await gas('getProxyPdfBase64', _current.id);
       pdfData = { data: b64ToUint8(b64) };
     }
@@ -3321,6 +3334,7 @@ function toggleUtilitiesDropdown() {
   const dd      = document.getElementById('utilities-dropdown');
   const open    = dd.classList.toggle('visible');
   trigger.classList.toggle('open', open);
+  if (open) loadBookmarkletLink();   // start early, so the bookmarklet button is usually ready when it is shown
 }
 document.addEventListener('click', e => {
   const menu = document.getElementById('utilities-menu');
@@ -3839,12 +3853,41 @@ async function dismissMentionBanner(mentionId) {
   await gas('markMentionSeen', mentionId);
   refreshMentionBadge();
 }
+// The button has no link at all until the real bookmarklet code has arrived (it starts greyed out, "Preparing
+// bookmarklet…", and cannot be dragged); a failure says so, and clicking the button then tries again. The code is
+// fetched once per page, starting when the Utilities menu opens.
+let _bookmarkletState = 'idle';   // idle | loading | ready | failed
+function _showBookmarkletState(state, message) {
+  const link = document.getElementById('bookmarklet-link'), status = document.getElementById('bookmarklet-status');
+  if (!link) return;
+  const ready = state === 'ready';
+  link.classList.toggle('bm-wait', !ready);
+  link.setAttribute('draggable', ready ? 'true' : 'false');
+  if (!ready) link.removeAttribute('href');
+  link.textContent = ready ? 'Add to BibMan' : state === 'failed' ? 'Bookmarklet not available: click to try again' : 'Preparing bookmarklet…';
+  if (status) { status.textContent = message || ''; status.classList.toggle('bm-error', state === 'failed'); }
+}
 async function loadBookmarkletLink() {
+  if (_bookmarkletState === 'loading' || _bookmarkletState === 'ready') return;
+  _bookmarkletState = 'loading';
+  _showBookmarkletState('loading', '');
   try {
     const code = await gas('getBookmarkletCode');
-    const link = document.getElementById('bookmarklet-link');
-    if (link && code) link.href = code;
-  } catch(e) { console.warn('Bookmarklet load failed:', e); }
+    if (typeof code !== 'string' || code.indexOf('javascript:') !== 0 || code.indexOf('Bookmarklet unavailable') > -1)
+      throw new Error('the bookmarklet code could not be fetched from GitHub');
+    _bookmarkletState = 'ready';
+    _showBookmarkletState('ready', 'Ready: drag the button to your bookmarks bar.');
+    document.getElementById('bookmarklet-link').href = code;
+  } catch(e) {
+    console.warn('Bookmarklet load failed:', e);
+    _bookmarkletState = 'failed';
+    _showBookmarkletState('failed', 'The bookmarklet could not be prepared (' + ((e && e.message) || e) + '). Reload the page, or click the button to try again.');
+  }
+}
+function bookmarkletButtonClick(ev) {
+  ev.preventDefault();
+  if (_bookmarkletState === 'ready') alert('Drag this button to your bookmarks bar!');
+  else if (_bookmarkletState === 'failed') loadBookmarkletLink();
 }
 // ── Paper View actions ────────────────────────────────────────────────────────
 // Paper View mark buttons: highlighted = your mark; dashed outline = marked only by others ("Everyone" view).
