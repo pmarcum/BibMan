@@ -2200,7 +2200,7 @@ def list_papers():
             SELECT p.id, p.bibkey, p.title, p.authors, p.year, p.journal,
                    p.volume, p.pages, p.pubtype, p.bibcode, p.doi,
                    p.read_status, p.pdf_extracted, p.pdf_url, p.file_id,
-                   p.key_paper, p.pinned, p.followup,
+                   p.key_paper, p.pinned, p.followup, p.created_at,
                    CASE WHEN p.synonyms_generated_at IS NOT NULL THEN 1 ELSE 0 END AS embeddings_done,
                    (SELECT COUNT(*) FROM annotations a
                     WHERE a.paper_id = p.id) AS has_annotations,
@@ -2219,7 +2219,7 @@ def list_papers():
             SELECT p.id, p.bibkey, p.title, p.authors, p.year, p.journal,
                    p.volume, p.pages, p.pubtype, p.bibcode, p.doi,
                    p.read_status, p.pdf_extracted, p.pdf_url, p.file_id,
-                   p.key_paper, p.pinned, p.followup,
+                   p.key_paper, p.pinned, p.followup, p.created_at,
                    CASE WHEN p.synonyms_generated_at IS NOT NULL THEN 1 ELSE 0 END AS embeddings_done,
                    (SELECT COUNT(*) FROM annotations a
                     WHERE a.paper_id = p.id

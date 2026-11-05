@@ -684,6 +684,10 @@ or add new database">?</span>
         </span>
         <button class="btn-sm" data-tip="Add a new paper by DOI, arXiv ID, or ADS bibcode" onclick="openAddModal()">+ Add</button>
         <button class="btn-sm" data-tip="Refresh the paper list from the server" onclick="loadPapers()">↻</button>
+        <select class="lib-select" id="paper-sort" title="Order of the paper list (remembered in this browser)" onchange="setPaperSort(this.value)">
+          <option value="bibkey">A–Z by bibkey</option>
+          <option value="newest">Newest first</option>
+        </select>
         <span class="panel-count" id="paper-count">— papers</span>
       </div>
       <div class="paper-table">
@@ -1483,10 +1487,26 @@ function applyFilter(f) {
       return false;
     });
   }
+  if (_paperSort === 'newest') filtered = filtered.slice().sort(_newestFirst);
   _filtered = filtered;
   renderRows(_filtered);
   updateCounts();
 }
+// ── Order of the paper list: A–Z by bibkey (the server's order) or newest first (when each paper was added to BibMan;
+// papers with no date go last, ties A–Z). The choice is remembered in this browser.
+let _paperSort = (() => { try { return localStorage.getItem('bibman_paper_sort') === 'newest' ? 'newest' : 'bibkey'; } catch(e) { return 'bibkey'; } })();
+function _addedKey(p) { return String(p.created_at || '').replace(' ', 'T').replace(/Z$/, ''); }   // both stored formats compare alike
+function _newestFirst(a, b) {
+  const ka = _addedKey(a), kb = _addedKey(b);
+  if (ka !== kb) return ka < kb ? 1 : -1;
+  return String(a.bibkey || '').localeCompare(String(b.bibkey || ''), undefined, { sensitivity: 'base' });
+}
+function setPaperSort(mode) {
+  _paperSort = mode === 'newest' ? 'newest' : 'bibkey';
+  try { localStorage.setItem('bibman_paper_sort', _paperSort); } catch(e) {}
+  applyFilter(_filter);
+}
+document.addEventListener('DOMContentLoaded', () => { const sel = document.getElementById('paper-sort'); if (sel) sel.value = _paperSort; });
 function filterPapers(q) { applyFilter(_filter); }
 function setFilter(f)    { applyFilter(f); }
 function _parseAndFilter(papers, query, sidebarFilter) {

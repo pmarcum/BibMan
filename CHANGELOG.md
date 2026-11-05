@@ -1,5 +1,10 @@
 # Changelog
 
+## 5 November 2026: "Newest first" in the paper list
+
+- **The paper list can be sorted newest first**, by when each paper was added to BibMan (menu next to ↻ in the Library toolbar; *A–Z by bibkey*, the order so far, is the default). It works together with search and the sidebar filters, and each browser remembers the choice. Papers imported in bulk carry the date of the import; papers with no date come last.
+- Server: the paper list now includes each paper's `created_at`. Install the server before the dashboard page, since the page needs that field to sort.
+
 ## 5 November 2026: PDF hand-off address and the re-save (server only)
 
 - **The server only remembers the published address of the web app** (`https://script.google.com/…/exec`). Apps Script tells the server where to hand over PDFs with every request; a function run from the editor (`resavePdfsCheck`, `checkPdfLinks`, …) reports the editor's `/dev` address instead, which only works for its signed-in owner. Remembering that made every PDF hand-off fail with `401 Unauthorized` until the next dashboard request. Other addresses are now ignored.
