@@ -377,13 +377,22 @@ CONFIG = {
     **load_config(),
 }
 
+# Only a published web-app address (https://script.google.com/macros/s/<id>/exec, or /a/macros/<domain>/s/<id>/exec for
+# Google Workspace accounts) is remembered. A function run from the Apps Script editor reports the editor's /dev address,
+# which only works for its signed-in owner: remembering it made every PDF hand-off fail with 401 (5 Nov 2026).
+PUBLISHED_GAS_URL_RE = re.compile(r'^https://script\.google\.com/(?:a/macros/[^/\s]+|macros)/s/[A-Za-z0-9_-]+/exec$')
+
 def update_gas_webapp_url():
-    """Persist GAS webapp URL from request header — self-updates when URL changes."""
+    """Persist GAS webapp URL from request header — self-updates when URL changes (published /exec addresses only)."""
     url = request.headers.get('X-GAS-Webapp-URL', '').strip()
-    if url and url != CONFIG.get('gas_webapp_url', ''):
-        CONFIG['gas_webapp_url'] = url
-        save_config(CONFIG)
-        log.info(f'GAS webapp URL updated in config: {url}')
+    if not url or url == CONFIG.get('gas_webapp_url', ''):
+        return
+    if not PUBLISHED_GAS_URL_RE.match(url):
+        log.debug(f'GAS webapp URL not remembered (not a published /exec address): {url}')
+        return
+    CONFIG['gas_webapp_url'] = url
+    save_config(CONFIG)
+    log.info(f'GAS webapp URL updated in config: {url}')
 
 # ── DB connection ─────────────────────────────────────────────────────────────
 def get_db_connection():
@@ -1468,6 +1477,7 @@ _CRON_RUNNING = False  # simple lock to prevent simultaneous cron runs
 # and saved. One paper every RESAVE_PAUSE_SECONDS (agreed: 10); PDFs over MAX_DRIVE_PDF_BYTES are skipped and listed.
 # Safe to run again: papers that now have a Drive copy are no longer candidates. Report next to the database.
 RESAVE_PAUSE_SECONDS = 10
+RESAVE_STOP_AFTER    = 5   # stop when this many papers in a row could not reach the web app (agreed 5 Nov 2026)
 _RESAVE = {'running': False, 'done': 0, 'total': 0, 'started': ''}
 RESAVE_WHERE = ("COALESCE(p.file_id,'') = '' AND p.pdf_extracted = 1 AND p.content_source_url LIKE 'http%' "
                 "AND p.content_source_url NOT LIKE 'https://arxiv.org/abs/%'")
@@ -1479,13 +1489,20 @@ def _resave_candidates(conn):
 def _resave_job(rows):
     linked, saved, too_big, failed = [], [], [], []
     report = DB_PATH.parent / f'bibman_resave_pdfs_{datetime.now(timezone.utc):%Y%m%d_%H%M}.txt'
+    unreachable, stopped = 0, False   # papers in a row whose Drive check got no answer from the web app
     for i, r in enumerate(rows):
         name = (r['bibkey'] or r['bibcode'] or r['id']) + '.pdf'
         label = f'{r["library"]}/{name}'
         try:
             fid = find_pdf_via_gas(name, r['library'])
             if fid is None:
-                failed.append(f'{label}: could not check Drive'); continue
+                failed.append(f'{label}: could not check Drive')
+                unreachable += 1
+                if unreachable >= RESAVE_STOP_AFTER:
+                    stopped = True
+                    break
+                continue
+            unreachable = 0
             if not fid:
                 content, kind = fetch_url_content(r['content_source_url'])
                 if not content or kind != 'pdf':
@@ -1509,9 +1526,14 @@ def _resave_job(rows):
             failed.append(f'{label}: {e}')
         finally:
             _RESAVE['done'] = i + 1
-        if i + 1 < len(rows):
-            time.sleep(RESAVE_PAUSE_SECONDS)
+            if not stopped and i + 1 < len(rows):   # every paper, failed ones too, is followed by the pause
+                time.sleep(RESAVE_PAUSE_SECONDS)
+    not_tried = len(rows) - _RESAVE['done'] if stopped else 0
+    gas_url = CONFIG.get('gas_webapp_url', '').strip() or os.environ.get('GAS_WEBAPP_URL', '').strip() or '(none)'
     lines = [f'Re-save of PDFs missing from Drive, {_RESAVE["started"]} UTC: {len(rows)} papers',
+             *([f'STOPPED EARLY: {RESAVE_STOP_AFTER} papers in a row could not reach the bookmarklet\'s web app '
+                f'({gas_url}; the server log says why). Nothing was changed for them. Not tried: {not_tried}. '
+                f'Run the re-save again once the web app answers.'] if stopped else []),
              f'linked to a PDF already in Drive: {len(linked)}', f'fetched again and saved: {len(saved)}',
              f'skipped, over {MAX_DRIVE_PDF_BYTES // 2**20} MB (add by hand): {len(too_big)}', *['  ' + x for x in too_big],
              f'failed: {len(failed)}', *['  ' + x for x in failed]]
@@ -1519,8 +1541,11 @@ def _resave_job(rows):
         report.write_text('\n'.join(lines) + '\n')
     except Exception as e:
         log.warning(f're-save: could not write the report: {e}')
+    if stopped:
+        log.warning(f're-save of missing PDFs stopped early: {RESAVE_STOP_AFTER} papers in a row could not reach the '
+                    f'web app ({gas_url}); {not_tried} not tried; report {report.name}')
     log.info(f're-save of missing PDFs finished: {len(linked)} linked, {len(saved)} saved, {len(too_big)} too big, '
-             f'{len(failed)} failed; report {report.name}')
+             f'{len(failed)} failed{f", {not_tried} not tried" if stopped else ""}; report {report.name}')
     _RESAVE['running'] = False
 
 @app.route('/api/admin/resave-pdfs', methods=['GET', 'POST'])

@@ -1,5 +1,11 @@
 # Changelog
 
+## 5 November 2026: PDF hand-off address and the re-save (server only)
+
+- **The server only remembers the published address of the web app** (`https://script.google.com/…/exec`). Apps Script tells the server where to hand over PDFs with every request; a function run from the editor (`resavePdfsCheck`, `checkPdfLinks`, …) reports the editor's `/dev` address instead, which only works for its signed-in owner. Remembering that made every PDF hand-off fail with `401 Unauthorized` until the next dashboard request. Other addresses are now ignored.
+- **The re-save stops early when the web app cannot be reached:** after 5 papers in a row whose Drive check got no answer, it stops and says so at the top of its report (nothing is changed for those papers). Papers that fail for their own reason (a dead link, a PDF over 40 MB) do not count.
+- **The 10-second pause now follows every paper in the re-save**, failed ones too (it was skipped after a failure).
+
 ## 3 November 2026: PDFs reach Drive again (Core 10)
 
 - **New papers' PDFs are saved to Drive again.** The server handed them to the dashboard's web app, which runs as the person using it and refused the server (`401 Unauthorized`), so no PDF had reached Drive for a while (they still displayed, fetched from their source). Apps Script now tells the server the bookmarklet's web app instead, which runs as the owner; it saves the PDF in `BibMan_PDFs/<library>/` as before. The bookmarklet project needs the Script Property `PDF_FOLDER_ID`.
