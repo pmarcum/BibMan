@@ -31,6 +31,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13
 .logo{display:flex;align-items:center;gap:10px}
 .logo-text{display:flex;flex-direction:column;gap:1px}
 .logo-name{font-family:var(--mono);font-size:14px;font-weight:600;letter-spacing:.05em;line-height:1}
+.logo-version{font-family:var(--mono);font-size:10px;font-weight:400;color:var(--muted);letter-spacing:0;margin-left:6px}
 .logo-tagline{font-family:var(--sans);font-size:10px;font-weight:400;color:var(--muted);letter-spacing:.02em}
 .nav-tabs{display:flex;gap:2px;margin-left:8px}
 .nav-tab{padding:5px 14px;border-radius:5px;cursor:pointer;font-family:var(--mono);
@@ -557,7 +558,7 @@ mark.search-highlight{background:rgba(255,220,0,.35);color:inherit;
     <a href="https://github.com/pmarcum/BibMan" target="_blank" style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;">
       <!--LOGO_PLACEHOLDER-->
       <div class="logo-text" style="display:flex;flex-direction:column;">
-        <span class="logo-name"><span style="color:var(--accent)">Bib</span><span style="color:var(--accent2)">Man</span></span>
+        <span class="logo-name"><span style="color:var(--accent)">Bib</span><span style="color:var(--accent2)">Man</span><span class="logo-version" id="app-version"></span></span>
         <span class="logo-tagline"><span style="color:var(--accent)">Bib</span>liography <span style="color:var(--accent2)">Man</span>ager</span>
       </div>
     </a>
@@ -682,7 +683,7 @@ or add new database">?</span>
             Use any of the above in solo or in combination.
           </div>
         </span>
-        <button class="btn-sm" data-tip="Add a new paper by DOI, arXiv ID, or ADS bibcode" onclick="openAddModal()">+ Add</button>
+        <button class="btn-sm" id="btn-add-paper" data-tip="Add a new paper by DOI, arXiv ID, or ADS bibcode" onclick="openAddModal()">+ Add</button>
         <button class="btn-sm" data-tip="Refresh the paper list from the server" onclick="loadPapers()">↻</button>
         <select class="lib-select" id="paper-sort" title="Order of the paper list (remembered in this browser)" onchange="setPaperSort(this.value)">
           <option value="bibkey">A–Z by bibkey</option>
@@ -1160,6 +1161,10 @@ or add new database">?</span>
       flex-shrink:0;padding:10px 20px">
       <!-- Status message -->
       <div class="modal-status" id="add-status" style="margin-bottom:6px"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);margin-bottom:8px;cursor:pointer"
+        title="When the paper has been added, the usual tag box opens for it, so you can pick or create tags straight away">
+        <input type="checkbox" id="add-tag-after"> 🏷️ Tag it after adding
+      </label>
       <!-- Reference-only note (hidden for webpage type) -->
       <div id="add-ref-only-note" style="font-size:10px;color:var(--muted);margin-bottom:8px;
         padding:6px 8px;background:rgba(247,201,126,.06);border-radius:4px;
@@ -1235,6 +1240,9 @@ const CIRCLE_COLORS = ['#7eb8f7','#f7c97e','#7ef7c2','#c17ef7'];
 window.addEventListener('load', async () => {
   _clientConfig = await gas('getClientConfig');
   console.log('clientConfig:', JSON.stringify(_clientConfig));
+  // ── Version next to the logo: <Core library>.<Dashboard web app>, e.g. 10.14 ──
+  const verEl = document.getElementById('app-version'), coreV = _clientConfig.coreLibraryVersion, dashV = _clientConfig.frontendThinClientVersion;
+  if (verEl && coreV && dashV) { verEl.textContent = coreV + '.' + dashV; verEl.title = `Version ${coreV}.${dashV}: Core library ${coreV}, Dashboard ${dashV}`; }
   // ── Version update banners ────────────────────────────────────────────
   if (_clientConfig.coreLibraryUpdateAvailable) {
     const b = document.createElement('div');
@@ -1723,8 +1731,13 @@ async function selectPaper(id, hlInfo) {
   } catch(e) { notify(e.message, 'error'); }
 }
 // ── PDF loading & rendering ───────────────────────────────────────────────────
+// Only the newest PDF load may draw, and only the newest drawing may add pages: opening another paper (or ↻ PDF, or
+// zooming) while a PDF is still loading or being drawn stops the older one, whose pages would otherwise be mixed in
+// with the new ones (page 1, 17, 2, 18, …).
+let _pdfLoadSeq = 0, _pdfDrawSeq = 0;
 async function loadPdf() {
   if (!_current) { notify('Select a paper first', 'error'); return; }
+  const seq = ++_pdfLoadSeq, stale = () => seq !== _pdfLoadSeq;
   const placeholder = document.getElementById('pdf-placeholder');
   const grid        = document.getElementById('pdf-viewer-grid');
   placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching PDF…</div>';
@@ -1732,6 +1745,7 @@ async function loadPdf() {
   grid.style.display = 'none';
   try {
     const info = await gas('getPdfInfo', _current.id);
+    if (stale()) return;
     if (info.type === 'none') {
       placeholder.innerHTML = '<div class="pdf-placeholder-text">No PDF source configured.<br>Use Setup → Set PDF to link one.</div>';
       return;
@@ -1746,10 +1760,34 @@ async function loadPdf() {
     } else if (info.type === 'drive') {
       placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching from Drive…</div>';
       const token = await gas('getDrivePdfUrl', info.file_id);
-      pdfData = {
-        url: `https://www.googleapis.com/drive/v3/files/${info.file_id}?alt=media`,
-        httpHeaders: { 'Authorization': `Bearer ${token}` }
-      };
+      let driveDoc = null, driveErr = null;
+      try {
+        driveDoc = await pdfjsLib.getDocument({
+          url: `https://www.googleapis.com/drive/v3/files/${info.file_id}?alt=media`,
+          httpHeaders: { 'Authorization': `Bearer ${token}` }
+        }).promise;
+      } catch (derr) { driveErr = derr; }
+      if (!driveDoc) {
+        // Drive refused this viewer's account (e.g. a university or work account whose rules block apps from reading
+        // other people's files: 403). Every Drive copy is shared "anyone with the link can view", so the same file is
+        // fetched by its public link: through the Cloudflare Worker, or, if that fails too, through the server.
+        console.log('Drive refused the PDF for this account, fetching it by its public link instead:', driveErr && driveErr.message);
+        placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching from Drive (public link)…</div>';
+        if (_cfWorker) {
+          const pub = `https://drive.google.com/uc?export=download&id=${encodeURIComponent(info.file_id)}`;
+          try { driveDoc = await pdfjsLib.getDocument({ url: `${_cfWorker}?url=${encodeURIComponent(pub)}` }).promise; }
+          catch (werr) { console.log('The public Drive link through the Worker failed, fetching it through the server instead:', werr && werr.message); }
+        }
+        if (!driveDoc) {
+          try { driveDoc = await pdfjsLib.getDocument({ data: b64ToUint8(await gas('getProxyPdfBase64', _current.id)) }).promise; }
+          catch (serr) {
+            throw new Error('Drive refused this PDF for your account (' + ((driveErr && driveErr.message) || 'no reason given') +
+                            '), and its public link could not be fetched either (' + ((serr && serr.message) || serr) + ')');
+          }
+        }
+      }
+      if (!stale()) await renderPdfGrid(driveDoc);
+      return;
     } else {
       placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching PDF…</div>';
       // A stored link is tried through the Cloudflare Worker first, which spares the VM's outbound data; if the
@@ -1759,13 +1797,14 @@ async function loadPdf() {
         try { viaWorker = await pdfjsLib.getDocument({ url: `${_cfWorker}?url=${encodeURIComponent(info.source_url)}` }).promise; }
         catch (werr) { console.log('PDF through the Worker failed, fetching it through the server instead:', werr && werr.message); }
       }
-      if (viaWorker) { await renderPdfGrid(viaWorker); return; }
+      if (viaWorker) { if (!stale()) await renderPdfGrid(viaWorker); return; }
       const b64 = await gas('getProxyPdfBase64', _current.id);
       pdfData = { data: b64ToUint8(b64) };
     }
     const doc = await pdfjsLib.getDocument(pdfData).promise;
-    await renderPdfGrid(doc);
+    if (!stale()) await renderPdfGrid(doc);
   } catch(e) {
+    if (stale()) return;   // an older load failing must not cover the newer PDF
     placeholder.innerHTML = `<div class="pdf-placeholder-text" style="color:var(--red)">PDF load failed:<br>${esc(e.message)}</div>`;
     placeholder.style.display = 'flex';
     document.getElementById('pdf-viewer-grid').style.display = 'none';
@@ -1776,6 +1815,7 @@ function b64ToUint8(b64) {
   for (let i=0;i<bin.length;i++) out[i]=bin.charCodeAt(i); return out;
 }
 async function renderPdfGrid(doc) {
+  const draw = ++_pdfDrawSeq, stale = () => draw !== _pdfDrawSeq;
   _pdfDoc = doc;
   const placeholder = document.getElementById('pdf-placeholder');
   const grid        = document.getElementById('pdf-viewer-grid');
@@ -1792,6 +1832,7 @@ async function renderPdfGrid(doc) {
   let   userClickedThumb = false;
   for (let pn = 1; pn <= doc.numPages; pn++) {
     const page = await doc.getPage(pn);
+    if (stale()) return;
     const vp   = page.getViewport({scale: SCALE});
     // Main canvas
     const container = document.createElement('div');
@@ -1810,6 +1851,7 @@ async function renderPdfGrid(doc) {
     container.appendChild(hl);
     canvasArea.appendChild(container);
     await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+    if (stale()) return;
     if (_vennHL && _vennHL.page_number === pn) drawHighlight(hl, _vennHL);
     // Text layer for mouse selection
     try {
@@ -1856,6 +1898,7 @@ async function renderPdfGrid(doc) {
     numDiv.className = 'pdf-thumb-num';
     numDiv.textContent = pn;
     thumbItem.appendChild(numDiv);
+    if (stale()) return;
     thumbStrip.appendChild(thumbItem);
   }
   // Show grid, hide placeholder
@@ -2551,8 +2594,19 @@ function toggleOptionalFields() {
   fields.style.display = isOpen ? 'none' : '';
   if (arrow) arrow.innerHTML = isOpen ? '&#9654;' : '&#9660;';
 }
+// After a paper has been added: close the dialog and reload the list as before; with "Tag it after adding" ticked,
+// the usual tag box then opens for the new paper (next to the + Add button).
+function _afterAdd(r) {
+  const tagIt = document.getElementById('add-tag-after')?.checked && r && r.paper_id;
+  setTimeout(async () => {
+    closeModal('modal-add');
+    await loadPapers();
+    if (tagIt) openTagPopover(r.paper_id, document.getElementById('btn-add-paper') || document.body);
+  }, 1500);
+}
 function openAddModal() {
   document.getElementById('add-id').value = '';
+  document.getElementById('add-tag-after').checked = false;
   document.getElementById('add-status').textContent = '';
   document.getElementById('add-type').value = 'article';
   onAddTypeChange('article');
@@ -2663,7 +2717,7 @@ async function submitAdd() {
       status.textContent = r.duplicate
         ? `Already in library: ${r.bibkey}`
         : `✓ Added: ${r.bibkey}`;
-      if (!r.duplicate) setTimeout(() => { closeModal('modal-add'); loadPapers(); }, 1500);
+      if (!r.duplicate) _afterAdd(r);
       return;
     }
     // Path 2: webpage type
@@ -2681,7 +2735,7 @@ async function submitAdd() {
         note:     document.getElementById('add-note')?.value?.trim() || `Accessed: ${new Date().toISOString().slice(0,10)}`,
       });
       status.textContent = `✓ Added: ${r.bibkey}`;
-      setTimeout(() => { closeModal('modal-add'); loadPapers(); }, 1500);
+      _afterAdd(r);
       return;
     }
     // Path 3: manual entry
@@ -2721,7 +2775,7 @@ async function submitAdd() {
     if (data.isbn)    { data.note = (data.note ? data.note + '; ' : '') + 'ISBN: ' + data.isbn; delete data.isbn; }
     const r = await gas('addPaperManual', data);
     status.textContent = `✓ Added: ${r.bibkey}`;
-    setTimeout(() => { closeModal('modal-add'); loadPapers(); }, 1500);
+    _afterAdd(r);
   } catch(e) {
     status.textContent = e.message.includes('503')
       ? 'NASA ADS is temporarily unavailable — please try again in a few minutes'

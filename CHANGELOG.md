@@ -1,5 +1,13 @@
 # Changelog
 
+## 5 November 2026: Drive PDFs for every account; pages in order; tag a paper when adding it
+
+- **Drive copies open for people whose Google account Drive refuses** (for example a university or work account whose rules stop apps reading files that belong to someone outside the organization: "PDF load failed: Unexpected server response (403)"). The dashboard still asks Drive with the viewer's account first; if Drive refuses, it fetches the same file by its public link (every Drive copy is "anyone with the link can view") through the Cloudflare Worker, and if that fails too, through the server. For everyone whose PDFs already opened nothing changes.
+- **"Tag it after adding"** in the **+ Add** dialog: when ticked, the usual tag box opens for the new paper as soon as it has been added. Unticked (the default each time the dialog opens), adding works exactly as before.
+- **PDF pages no longer get jumbled.** Opening another paper, clicking ↻ PDF or zooming while a PDF was still loading or being drawn let the older drawing carry on alongside the new one, so pages were mixed (page 1, 17, 2, 18, …, sometimes from two different papers). Now only the newest one draws; the older one stops.
+- **The version is shown next to the logo** as *Core.Dashboard*, e.g. **10.14** (Core library 10, Dashboard web app 14); hovering over it says so.
+- Dashboard page (`Index.html`) only.
+
 ## 5 November 2026: "Newest first" in the paper list
 
 - **The paper list can be sorted newest first**, by when each paper was added to BibMan (menu next to ↻ in the Library toolbar; *A–Z by bibkey*, the order so far, is the default). It works together with search and the sidebar filters, and each browser remembers the choice. Papers imported in bulk carry the date of the import; papers with no date come last.
