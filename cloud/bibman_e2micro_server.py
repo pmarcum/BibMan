@@ -41,6 +41,7 @@ import threading
 import time
 import base64
 import hmac
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from functools import wraps
@@ -422,6 +423,91 @@ def get_db_connection():
     except Exception as e:
         log.warning(f'Schema migration warning: {e}')
     return conn
+
+# ── The dashboard's version line: what page and server are running (8 Nov 2026) ─────────────────────────────────
+# The hover text of "BibMan vCORE.DASHBOARD" under the logo also says how the two parts that are updated for everyone
+# at once compare with GitHub: the page (Index.html, loaded from GitHub) and this server. The server is installed by
+# copying the file, not by a git checkout, so it identifies itself by the fingerprint Git gives the file's content
+# (its blob hash) and compares that with the file on GitHub. GitHub is asked at most every ABOUT_CACHE_SECONDS
+# (answers and failures alike are kept that long), with a 3-second timeout per request, in the background: a request
+# never waits for GitHub except the very first after a restart (at most ABOUT_FIRST_WAIT seconds). The answer rides
+# on GET /api/libraries/current, which the dashboard asks for when it starts:
+#   about = {server: {fingerprint, commit?, date?}, page: {commit, date} | None, server_update: True | False | None,
+#            server_on_github: True | False | None, server_latest: {commit, date} | None}
+GITHUB_REPO          = os.environ.get('BIBMAN_GITHUB_REPO', 'pmarcum/BibMan').strip()   # owner/repo of this install
+SERVER_FILE_IN_REPO  = 'cloud/bibman_e2micro_server.py'
+ABOUT_CACHE_SECONDS  = 600
+ABOUT_FIRST_WAIT     = 3.5
+
+def git_blob_sha(data: bytes) -> str:
+    """The hash Git gives a file with this content (what GitHub reports as the file's sha)."""
+    return hashlib.sha1(b'blob %d\0' % len(data) + data).hexdigest()
+
+try:
+    RUNNING_SERVER_BLOB = git_blob_sha(Path(__file__).read_bytes())
+except Exception:
+    RUNNING_SERVER_BLOB = ''
+
+_ABOUT = {'at': 0.0, 'value': None, 'refreshing': False}
+_ABOUT_LOCK = threading.Lock()
+_ABOUT_READY = threading.Event()
+
+def _github(method, path, params=None):
+    return requests.request(method, f'https://api.github.com/repos/{GITHUB_REPO}/{path}', params=params, timeout=3,
+                            headers={'User-Agent': 'BibMan-server', 'Accept': 'application/vnd.github+json'})
+
+def _latest_commit(path):
+    r = _github('GET', 'commits', {'path': path, 'per_page': 1})
+    r.raise_for_status()
+    c = r.json()[0]
+    return {'commit': c['sha'], 'date': c['commit']['committer']['date']}
+
+def compute_about():
+    """Ask GitHub; on any failure give only the server's own fingerprint."""
+    own = {'fingerprint': RUNNING_SERVER_BLOB[:12]}
+    try:
+        page   = _latest_commit('Index.html')
+        latest = _latest_commit(SERVER_FILE_IN_REPO)
+        folder, name = SERVER_FILE_IN_REPO.rsplit('/', 1)
+        r = _github('GET', f'contents/{folder}')          # the folder listing: names and blob hashes, no file contents
+        r.raise_for_status()
+        github_blob = next((e.get('sha') for e in r.json() if e.get('name') == name), '')
+        if RUNNING_SERVER_BLOB and github_blob == RUNNING_SERVER_BLOB:
+            return {'server': {**own, **latest}, 'page': page, 'server_update': False, 'server_on_github': True,
+                    'server_latest': latest}
+        r = _github('HEAD', f'git/blobs/{RUNNING_SERVER_BLOB}')   # is the running version an older GitHub version?
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+        on_github = r.status_code == 200
+        return {'server': own, 'page': page, 'server_update': True if on_github else None, 'server_on_github': on_github,
+                'server_latest': latest}
+    except Exception as e:
+        log.info(f'about: GitHub could not be asked ({e})')
+        return {'server': own, 'page': None, 'server_update': None, 'server_on_github': None, 'server_latest': None}
+
+def _refresh_about():
+    value = None
+    try:
+        value = compute_about()
+    finally:
+        with _ABOUT_LOCK:
+            _ABOUT.update(at=time.time(), value=value or _ABOUT['value'], refreshing=False)
+        _ABOUT_READY.set()
+
+def get_about():
+    """The cached answer; a stale one is refreshed in the background (GitHub is asked at most every 10 minutes)."""
+    with _ABOUT_LOCK:
+        stale = _ABOUT['value'] is None or time.time() - _ABOUT['at'] >= ABOUT_CACHE_SECONDS
+        if stale and not _ABOUT['refreshing']:
+            _ABOUT['refreshing'] = True
+            threading.Thread(target=_refresh_about, daemon=True, name='about-github').start()
+        value = _ABOUT['value']
+    if value is None:
+        _ABOUT_READY.wait(ABOUT_FIRST_WAIT)
+        with _ABOUT_LOCK:
+            value = _ABOUT['value']
+    return value or {'server': {'fingerprint': RUNNING_SERVER_BLOB[:12]}, 'page': None, 'server_update': None,
+                     'server_on_github': None, 'server_latest': None}
 
 def get_current_library_id(conn=None):
     """Return (library_id, library_name) for the current library."""
@@ -2050,7 +2136,7 @@ def list_libraries():
 @gas_auth_required
 def get_current_library():
     library_id, library_name = get_current_library_id()
-    return jsonify({'library_id': library_id, 'library_name': library_name})
+    return jsonify({'library_id': library_id, 'library_name': library_name, 'about': get_about()})
 
 @app.route('/api/libraries/switch', methods=['POST'])
 @gas_auth_required

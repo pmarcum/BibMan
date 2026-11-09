@@ -153,6 +153,8 @@ sudo systemctl restart bibman && sudo journalctl -u bibman -n 30 --no-pager
 
 If something breaks, copy the `.bak_` file back and restart. To confirm the VM is running exactly what the repo holds, compare checksums: `sha256sum /home/bibman/bibman/bibman_e2micro_server.py` against `sha256sum cloud/bibman_e2micro_server.py` in a fresh clone.
 
+**The dashboard's version line says this too (since 8 Nov 2026).** Hover over *BibMan vCORE.DASHBOARD* under the logo: its last line says whether the server is up to date with GitHub, whether GitHub has newer server changes (install them as above), or whether the VM runs a version that is not on GitHub at all. The server works this out from the fingerprint Git gives its own file (`git hash-object`), compared with `cloud/bibman_e2micro_server.py` on GitHub. **The server contacts api.github.com for this at most every 10 minutes** (three or four small requests, no sign-in, 3-second timeout each, answers and failures kept for 10 minutes), in the background, so no dashboard request waits for GitHub except the first one after a restart (at most 3.5 seconds). The repository asked about is `pmarcum/BibMan`; another group's fork sets `Environment="BIBMAN_GITHUB_REPO=owner/repo"` in its service file. Tests for this live in `cloud/tests` and never contact GitHub: `cd cloud && ../venv/bin/python -m pytest tests -q` (needs `pip install pytest` in the venv once).
+
 Newer tables and columns are added by the server itself whenever it opens the database (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … ADD COLUMN`), so ordinary updates need no manual database migration. If you change the schema, also update `cloud/schema.sql` so new instances start with it: `sqlite3 -readonly bibman.db .schema` prints the current definitions (remove the FTS/vec0 shadow tables, as the header of `schema.sql` explains).
 
 ## Updating the Apps Script side, and `version.json`
@@ -169,7 +171,7 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 
 **Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's number (Core: in `Code.gs`; web apps: Script Property) equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the number records which release they installed, which need not equal their own deployment count.
 
-Current versions (8 November 2026): Core library **11**, Frontend web app **15**, Capture web app **11**. Both web apps select Core version **11** under **Libraries**. The dashboard shows the first two next to the logo as *Core.Dashboard*, e.g. **11.15** (hover over it for the details).
+Current versions (8 November 2026): Core library **11**, Frontend web app **15**, Capture web app **11**. Both web apps select Core version **11** under **Libraries**. The dashboard shows the first two under the logo as *BibMan vCore.Dashboard*, e.g. **BibMan v11.15**; hover over it for what each number is and how the page and the server compare with GitHub.
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project (for a Core change, first set `BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs` to the number the new deployment will get), and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).

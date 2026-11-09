@@ -1,5 +1,10 @@
 # Changelog
 
+## 8 November 2026: version line under the logo
+
+- **"BibMan v11.15" under the logo text** (small, gray) replaces the number next to the logo: the Core library version, then the Dashboard web app version, the same numbers the "new version available" banner compares with `version.json`. Hovering over it says what each number is, and for the two parts updated for everyone at once: the page's latest change on GitHub, and whether the server is up to date with GitHub, behind it, or running a version that is not on GitHub.
+- Server: the answer to `/api/libraries/current` now carries `about`; the server asks api.github.com at most every 10 minutes (see MAINTENANCE.md, "Updating the server code"). Tests in `cloud/tests` (never contact GitHub).
+
 ## 8 November 2026: tags in the bookmarklet (Core 11)
 
 - **Tags can be picked in the bookmarklet.** Below the library, the bookmarklet lists the tags you could use in the dashboard (shared tags and your own private ones) that are already used on at least one paper in the chosen library; click to pick any, then **Add to BibMan**. New tags are created in the dashboard, as before. Picked tags are not applied when the paper is already in the library.
