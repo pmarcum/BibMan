@@ -1240,7 +1240,6 @@ const CIRCLE_COLORS = ['#7eb8f7','#f7c97e','#7ef7c2','#c17ef7'];
 window.addEventListener('load', async () => {
   _clientConfig = await gas('getClientConfig');
   console.log('clientConfig:', JSON.stringify(_clientConfig));
-  // ── Version next to the logo: <Core library>.<Dashboard web app>, e.g. 10.14 ──
   const verEl = document.getElementById('app-version'), coreV = _clientConfig.coreLibraryVersion, dashV = _clientConfig.frontendThinClientVersion;
   if (verEl && coreV && dashV) { verEl.textContent = coreV + '.' + dashV; verEl.title = 'Version ' + coreV + '.' + dashV + ': Core library ' + coreV + ', Dashboard ' + dashV; }
   // ── Version update banners ────────────────────────────────────────────
@@ -1731,9 +1730,6 @@ async function selectPaper(id, hlInfo) {
   } catch(e) { notify(e.message, 'error'); }
 }
 // ── PDF loading & rendering ───────────────────────────────────────────────────
-// Only the newest PDF load may draw, and only the newest drawing may add pages: opening another paper (or ↻ PDF, or
-// zooming) while a PDF is still loading or being drawn stops the older one, whose pages would otherwise be mixed in
-// with the new ones (page 1, 17, 2, 18, …).
 let _pdfLoadSeq = 0, _pdfDrawSeq = 0;
 async function loadPdf() {
   if (!_current) { notify('Select a paper first', 'error'); return; }
@@ -1768,9 +1764,6 @@ async function loadPdf() {
         }).promise;
       } catch (derr) { driveErr = derr; }
       if (!driveDoc) {
-        // Drive refused this viewer's account (e.g. a university or work account whose rules block apps from reading
-        // other people's files: 403). Every Drive copy is shared "anyone with the link can view", so the same file is
-        // fetched by its public link: through the Cloudflare Worker, or, if that fails too, through the server.
         console.log('Drive refused the PDF for this account, fetching it by its public link instead:', driveErr && driveErr.message);
         placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching from Drive (public link)…</div>';
         if (_cfWorker) {
@@ -1804,7 +1797,7 @@ async function loadPdf() {
     const doc = await pdfjsLib.getDocument(pdfData).promise;
     if (!stale()) await renderPdfGrid(doc);
   } catch(e) {
-    if (stale()) return;   // an older load failing must not cover the newer PDF
+    if (stale()) return;
     placeholder.innerHTML = `<div class="pdf-placeholder-text" style="color:var(--red)">PDF load failed:<br>${esc(e.message)}</div>`;
     placeholder.style.display = 'flex';
     document.getElementById('pdf-viewer-grid').style.display = 'none';
@@ -2594,8 +2587,6 @@ function toggleOptionalFields() {
   fields.style.display = isOpen ? 'none' : '';
   if (arrow) arrow.innerHTML = isOpen ? '&#9654;' : '&#9660;';
 }
-// After a paper has been added: close the dialog and reload the list as before; with "Tag it after adding" ticked,
-// the usual tag box then opens for the new paper (next to the + Add button).
 function _afterAdd(r) {
   const tagIt = document.getElementById('add-tag-after')?.checked && r && r.paper_id;
   setTimeout(async () => {
