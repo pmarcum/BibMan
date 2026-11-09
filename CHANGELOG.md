@@ -1,5 +1,10 @@
 # Changelog
 
+## 9 November 2026: taking off a guest's tag (Core 13)
+
+- **Admins and core members can take off tags a guest put on a paper.** Guests have no dashboard, so until now nobody could remove their tags except by deleting the paper. The paper's tag box now lists them under *Tagged by guests*, with **✕ take off** next to each. Only tags applied with a guest bookmarklet are listed; colleagues' tags can still only be removed by whoever applied them.
+- Server (a new request that only accepts the name of a guest key), Core 13, the dashboard page; both web apps select Core 13 and redeploy (dashboard 17, capture 13; their `Code.gs` is unchanged).
+
 ## 9 November 2026: guest bookmarklets (Core 12); the version line and test branches
 
 - **Guest bookmarklets** for outside guests of a paper or proposal project, in **Utilities → Guest bookmarklets** (shown to admins and core members only). One per project, shared by its guests: it adds papers to one library you choose, recorded as `guest-PROJECT`, lets guests pick shared tags already used in that library, and stops working by itself after its end date. You send the guests an install link; they need no Google sign-in and no access code. Any admin or core member can change a key's date (which also reopens one whose date has passed) or end it at once for good; ended keys stay listed. A guest bookmarklet carries only its own key, never the server credential. See MAINTENANCE.md, "Adding and removing people".

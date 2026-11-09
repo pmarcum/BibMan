@@ -102,3 +102,21 @@ def test_made_on_an_existing_database(server):
     conn = server.get_db_connection()
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='guest_keys'").fetchone()
     conn.close()
+
+def test_remove_a_guests_tag(api, server):
+    """Guests can't take their tags off; admins and core members can (Core checks who), and only guests' tags."""
+    k = create(api, project='TAGS')[1]['key']
+    lab = api('POST', '/api/tags/labels', {'label': 'guesttagtest'})[1]
+    paper = api('POST', '/api/papers/add-manual', {'title': 'Tag test paper', 'authors': 'X, Y.', 'year': '2024'})[1]
+    pid = paper['paper_id']
+    api('POST', f'/api/papers/{pid}/tags', {'label_id': lab['id']}, user='guest-TAGS')
+    api('POST', f'/api/papers/{pid}/tags', {'label_id': lab['id']}, user='sarah')
+    owners = lambda: sorted(t['user_id'] for t in api('GET', f'/api/papers/{pid}/tags?all=1&_u=pam')[1])
+    assert owners() == ['guest-TAGS', 'sarah']
+    assert api('DELETE', f'/api/papers/{pid}/guest-tags/{lab["id"]}?guest=sarah')[0] == 400        # not a guest
+    assert api('DELETE', f'/api/papers/{pid}/guest-tags/{lab["id"]}?guest=guest-NOPE')[0] == 400   # no such key
+    code, j = api('DELETE', f'/api/papers/{pid}/guest-tags/{lab["id"]}?guest=guest-TAGS')
+    assert code == 200 and j['removed'] == 1 and owners() == ['sarah']                              # sarah's stays
+    api('POST', f'/api/guest-keys/{k["id"]}/end-now')
+    api('POST', f'/api/papers/{pid}/tags', {'label_id': lab['id']}, user='guest-TAGS')
+    assert api('DELETE', f'/api/papers/{pid}/guest-tags/{lab["id"]}?guest=guest-TAGS')[1]['removed'] == 1  # also after End now

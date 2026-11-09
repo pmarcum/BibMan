@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 12,
-  "bibman_frontend_thinclient_webapp_version": 16,
-  "bibman_bookmarklet_capture_webapp_version": 12,
-  "bibman_core_library_notes": "v12: guest bookmarklets (Utilities → Guest bookmarklets, for admins and core members). In each web app: Libraries → BibManCore → select version 12, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v16: select Core 12 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v12: replace Code.gs (it now has doGet, for guests' install page), select Core 12 and redeploy"
+  "bibman_core_library_version": 13,
+  "bibman_frontend_thinclient_webapp_version": 17,
+  "bibman_bookmarklet_capture_webapp_version": 13,
+  "bibman_core_library_notes": "v13: admins and core members can take off tags a guest put on a paper (in the paper's tag box). In each web app: Libraries → BibManCore → select version 13, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v17: select Core 13 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v13: select Core 13 and redeploy (Code.gs unchanged)"
 }

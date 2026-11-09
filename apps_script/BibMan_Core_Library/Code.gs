@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 12;
+const BIBMAN_CORE_LIBRARY_VERSION = 13;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -323,6 +323,7 @@ function dispatch(config, fn, ...args) {
     createGuestKey:        (project, library, endsOn) => createGuestKey(config, project, library, endsOn),
     setGuestKeyEndDate:    (id, endsOn) => setGuestKeyEndDate(config, id, endsOn),
     endGuestKeyNow:        (id) => endGuestKeyNow(config, id),
+    removeGuestPaperTag:   (paperId, labelId, guest) => removeGuestPaperTag(config, paperId, labelId, guest),
     // Mentions
     createMention:         (data) => createMention(config, data),
     getUnreadMentions:     () => getUnreadMentions(config),
@@ -1551,6 +1552,13 @@ function endGuestKeyNow(config, id) {
   const r = apiCall(config, 'POST', '/api/guest-keys/' + encodeURIComponent(id) + '/end-now', {});
   _withGuestLink_(config, r.key);
   return r;
+}
+
+// A tag a guest put on a paper: guests have no dashboard to remove it, so admins and core members may (Core 13).
+function removeGuestPaperTag(config, paperId, labelId, guest) {
+  _requireGuestManager_(config);
+  return apiCall(config, 'DELETE', '/api/papers/' + encodeURIComponent(paperId) + '/guest-tags/' + encodeURIComponent(labelId),
+                 null, { guest: String(guest || '') });
 }
 
 // What the server says about a guest key: { ok, project, guest_name, library, ends_on, created_by, … } or a refusal.

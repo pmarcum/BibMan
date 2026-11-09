@@ -5134,6 +5134,25 @@ def count_guest_paper(key_id):
     conn.close()
     return jsonify({'ok': True})
 
+@app.route('/api/papers/<paper_id>/guest-tags/<label_id>', methods=['DELETE'])
+@gas_auth_required
+def remove_guest_paper_tag(paper_id, label_id):
+    """Remove a tag a guest put on a paper (?guest=guest-PROJECT). Guests have no dashboard to take their tags off, so
+    admins and core members may (the Core library checks who asks). Only names of guest keys are accepted, so nobody's
+    own tags can be removed this way."""
+    guest = (request.args.get('guest') or '').strip()
+    conn = get_db_connection()
+    try:
+        known = conn.execute("SELECT 1 FROM guest_keys WHERE 'guest-' || project = ?", (guest,)).fetchone() if guest else None
+        if not known:
+            return err('Not a guest bookmarklet\'s name: ' + guest, 400)
+        removed = conn.execute('DELETE FROM paper_tags WHERE paper_id=? AND label_id=? AND user_id=? AND annotation_id IS NULL',
+                               (paper_id, label_id, guest)).rowcount
+        conn.commit()
+        return jsonify({'ok': True, 'removed': removed})
+    finally:
+        conn.close()
+
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
