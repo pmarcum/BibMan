@@ -1759,15 +1759,15 @@ async function loadPdf() {
       let driveDoc = null, driveErr = null;
       try {
         driveDoc = await pdfjsLib.getDocument({
-          url: 'https://www.googleapis.com/drive/v3/files/' + info.file_id + '?alt=media',
-          httpHeaders: { 'Authorization': 'Bearer ' + token }
+          url: `https://www.googleapis.com/drive/v3/files/${info.file_id}?alt=media`,
+          httpHeaders: { 'Authorization': `Bearer ${token}` }
         }).promise;
       } catch (derr) { driveErr = derr; }
       if (!driveDoc) {
         console.log('Drive refused the PDF for this account, fetching it by its public link instead:', driveErr && driveErr.message);
         placeholder.innerHTML = '<div class="pdf-placeholder-text"><span class="spinner"></span><br>Fetching from Drive (public link)…</div>';
         if (_cfWorker) {
-          const pub = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(info.file_id);
+          const pub = ['https:', '', 'drive.google.com', 'uc'].join('/') + '?export=download' + String.fromCharCode(38) + 'id=' + encodeURIComponent(info.file_id);
           try { driveDoc = await pdfjsLib.getDocument({ url: _cfWorker + '?url=' + encodeURIComponent(pub) }).promise; }
           catch (werr) { console.log('The public Drive link through the Worker failed, fetching it through the server instead:', werr && werr.message); }
         }
