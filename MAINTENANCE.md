@@ -169,7 +169,7 @@ Every deployed instance compares its own version numbers with [`version.json`](v
 
 **Numbering rule (keep it simple):** release numbers *are* the host's Apps Script deployment numbers. On the host instance, each project's number (Core: in `Code.gs`; web apps: Script Property) equals the number shown under **Deploy → Manage deployments** for that project, and `version.json` carries the same numbers. On another group's instance the number records which release they installed, which need not equal their own deployment count.
 
-Current versions (8 November 2026): Core library **10**, Frontend web app **14**, Capture web app **10**. Both web apps select Core version **10** under **Libraries**. The dashboard shows the first two next to the logo as *Core.Dashboard*, e.g. **10.14** (hover over it for the details).
+Current versions (8 November 2026): Core library **11**, Frontend web app **15**, Capture web app **11**. Both web apps select Core version **11** under **Libraries**. The dashboard shows the first two next to the logo as *Core.Dashboard*, e.g. **11.15** (hover over it for the details).
 
 To release a change:
 1. Update the files in `apps_script/`, paste them into the project (for a Core change, first set `BIBMAN_CORE_LIBRARY_VERSION` in `Code.gs` to the number the new deployment will get), and deploy with **Deploy → Manage deployments → Edit (pencil) → Version: New version → Deploy** (this keeps the web-app URLs, so bookmarklets keep working).
@@ -207,7 +207,7 @@ This lists any such file that other accounts can still read. An empty result is 
 
 Since 2 November 2026 (Core 9) there is no list of people: the dashboard is open to anyone signed in to Google who has the **dashboard link** and the **access code** (Script Property `BIBMAN_ACCESS_CODE` in the **Frontend** project). Each person enters the code once, in the box BibMan shows or in the link as `?access=CODE`, and BibMan remembers it for them until the code changes. Capitals count; spaces at either end are ignored. If no code is set, nobody can open the dashboard.
 
-**To add someone:** send them the dashboard link and the access code. They install the bookmarklet themselves from **Utilities → Bookmarklet**. If clicking someone's bookmarklet opens a blank Google page (`…googleusercontent.com/userCodeAppPanel…#`), that bookmark holds the dashboard's page address instead of the bookmarklet (it was dragged before the button was ready, which the dashboard prevents since 5 November 2026): delete it and drag a new one. A real bookmarklet's address starts with `javascript:`.
+**To add someone:** send them the dashboard link and the access code. They install the bookmarklet themselves from **Utilities → Bookmarklet**. Each bookmarklet carries the BibMan name of the person who dragged it (since Core 11): papers added with it are recorded as theirs, and it offers their tags, so everyone should drag their own rather than copy someone else's. If clicking someone's bookmarklet opens a blank Google page (`…googleusercontent.com/userCodeAppPanel…#`), that bookmark holds the dashboard's page address instead of the bookmarklet (it was dragged before the button was ready, which the dashboard prevents since 5 November 2026): delete it and drag a new one. A real bookmarklet's address starts with `javascript:`.
 
 **Admins** (who see the **Admin** menu) are the Google emails listed, separated by commas, in the Frontend's Script Property `ADMIN_EMAILS`.
 

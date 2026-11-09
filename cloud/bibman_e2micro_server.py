@@ -4569,17 +4569,23 @@ def _clash_text(row, user_id):
 @app.route('/api/tags/labels', methods=['GET'])
 @gas_auth_required
 def get_tag_labels():
-    """Every label this person may see and use (shared labels plus their own private ones); ?all is ignored."""
+    """Every label this person may see and use (shared labels plus their own private ones); ?all is ignored.
+    With ?library=<name> (the bookmarklet's tag list, 8 Nov 2026): only those labels already used on at least one
+    paper in that library."""
     user_id = get_user_id()
+    library = (request.args.get('library') or '').strip()
+    in_library = ('' if not library else
+                  ' AND EXISTS (SELECT 1 FROM paper_tags lt JOIN papers lp ON lp.id = lt.paper_id '
+                  'JOIN libraries ll ON ll.id = lp.library_id WHERE lt.label_id = l.id AND ll.name = ?)')
     conn    = get_db_connection()
     rows = conn.execute(f'''
         SELECT l.id, l.user_id, l.label, l.color, l.created_at, l.is_private,
                COUNT(pt.id) AS usage_count, COALESCE(SUM(pt.user_id = ?), 0) AS my_count
         FROM user_tag_labels l
         LEFT JOIN paper_tags pt ON pt.label_id = l.id
-        WHERE {VISIBLE_LABEL}
+        WHERE {VISIBLE_LABEL}{in_library}
         GROUP BY l.id ORDER BY lower(l.label)
-    ''', (user_id, user_id)).fetchall()
+    ''', (user_id, user_id) + ((library,) if library else ())).fetchall()
     conn.close()
     return jsonify(rows_to_list(rows))
 

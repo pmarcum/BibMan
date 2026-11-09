@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 10,
-  "bibman_frontend_thinclient_webapp_version": 14,
-  "bibman_bookmarklet_capture_webapp_version": 10,
-  "bibman_core_library_notes": "v10: new papers' PDFs are saved to Drive again (through the bookmarklet's web app); one-time PDF checks in the bookmarklet project. In each web app: Libraries → BibManCore → select version 10, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v14: select Core 10 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v10: new Code.gs (PDF saving, one-time PDF checks, authorizeDrive); add the Script Property PDF_FOLDER_ID (same value as in the dashboard project) and the Drive API service (Services → + → Drive API), select Core 10, redeploy, then run authorizeDrive once in the editor and allow the permissions"
+  "bibman_core_library_version": 11,
+  "bibman_frontend_thinclient_webapp_version": 15,
+  "bibman_bookmarklet_capture_webapp_version": 11,
+  "bibman_core_library_notes": "v11: tags can be picked in the bookmarklet (each person drags a new bookmarklet once from Utilities → Bookmarklet; their BibMan name is built into it). In each web app: Libraries → BibManCore → select version 11, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v15: select Core 11 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v11: select Core 11 and redeploy (Code.gs unchanged)"
 }

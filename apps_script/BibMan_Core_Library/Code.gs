@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 10;
+const BIBMAN_CORE_LIBRARY_VERSION = 11;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1119,13 +1119,19 @@ function getBookmarkletCode(config) {
   const credential = config.credential || '';
   const dashUrl    = config.dashUrl    || '';
   const bmUrl = 'https://raw.githubusercontent.com/pmarcum/BibMan/main/bookmarklet.js?t=' + Date.now();
+  // The BibMan name of the person dragging the bookmarklet (the part of their Google address before @, as everywhere
+  // in BibMan) is built into it (Core 11): papers they add are recorded as theirs, and they can pick their tags.
+  let who = '';
+  try { who = (Session.getActiveUser().getEmail() || '').split('@')[0]; } catch(e) {}
+  const whoJs = who.replace(/\\/g, '\\\\').replace(/'/g, "\\'");   // safe inside the bookmarklet's '…' string, unchanged otherwise
   try {
     const resp = UrlFetchApp.fetch(bmUrl, { muteHttpExceptions: true, deadline: 10 });
     if (resp.getResponseCode() === 200) {
       const code = resp.getContentText()
         .replace('__GAS_URL__', captureUrl)
         .replace('__CREDENTIAL__', credential)
-        .replace('__DASHBOARD_URL__', dashUrl);
+        .replace('__DASHBOARD_URL__', dashUrl)
+        .replace('__USERNAME__', function() { return whoJs; });
       return 'javascript:' + encodeURIComponent(code);
     }
   } catch(err) {
@@ -1412,6 +1418,15 @@ function captureDoPost(config, e) {
         try { return findPdfInDrive(config, data.filename, data.library_name || ''); }
         catch(err) { return { ok: false, error: err.message }; }
       }
+      // ── list_tags: the tags this person could use in the dashboard that are already used in this library (Core 11) ──
+      if (data.action === 'list_tags') {
+        const who = (data._username || '').trim(), lib = (data.library || '').trim();
+        if (!who || !lib) return { tags: [] };
+        try {
+          const labels = apiCall(config, 'GET', '/api/tags/labels', null, { library: lib, _u: who });
+          return { tags: (Array.isArray(labels) ? labels : []).map(function(l) { return { id: l.id, label: l.label, color: l.color }; }) };
+        } catch(err) { return { tags: [], error: err.message }; }
+      }
       // ── save_captured ─────────────────────────────────────────────────────
       if (data.action === 'save_captured') {
         try {
@@ -1433,6 +1448,15 @@ function captureDoPost(config, e) {
           });
           if (result && result.duplicate) {
             result.error = `Already in library as ${result.bibkey}`;
+          }
+          // Tags picked in the bookmarklet (Core 11): applied as the person whose bookmarklet it is
+          const who = (data._username || '').trim(), tagIds = Array.isArray(data.tag_ids) ? data.tag_ids.slice(0, 50) : [];
+          if (result && !result.duplicate && result.paper_id && who && tagIds.length) {
+            result.tagged = 0; result.tag_errors = [];
+            tagIds.forEach(function(id) {
+              try { apiCall(config, 'POST', '/api/papers/' + encodeURIComponent(result.paper_id) + '/tags', { label_id: String(id), _username: who }); result.tagged++; }
+              catch(e) { result.tag_errors.push(e.message); }
+            });
           }
           return result;
         } catch(err) {

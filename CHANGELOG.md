@@ -1,5 +1,11 @@
 # Changelog
 
+## 8 November 2026: tags in the bookmarklet (Core 11)
+
+- **Tags can be picked in the bookmarklet.** Below the library, the bookmarklet lists the tags you could use in the dashboard (shared tags and your own private ones) that are already used on at least one paper in the chosen library; click to pick any, then **Add to BibMan**. New tags are created in the dashboard, as before. Picked tags are not applied when the paper is already in the library.
+- **Each bookmarklet now knows whose it is:** the BibMan name of the person who drags it (the part of their Google address before @) is built in, so papers they add are recorded as theirs and their tags are applied as theirs. Everyone drags a new bookmarklet once from **Utilities → Bookmarklet** to get this; old bookmarklets keep working, without tags.
+- Server (the label list can be limited to one library), Core 11, `bookmarklet.js`; both web apps select Core 11 and redeploy (dashboard 15, capture 11; their `Code.gs` is unchanged).
+
 ## 5 November 2026: Drive PDFs for every account; pages in order; tag a paper when adding it
 
 - **Drive copies open for people whose Google account Drive refuses** (for example a university or work account whose rules stop apps reading files that belong to someone outside the organization: "PDF load failed: Unexpected server response (403)"). The dashboard still asks Drive with the viewer's account first; if Drive refuses, it fetches the same file by its public link (every Drive copy is "anyone with the link can view") through the Cloudflare Worker, and if that fails too, through the server. For everyone whose PDFs already opened nothing changes.

@@ -2,6 +2,7 @@
   var u='__GAS_URL__';
   var c='__CREDENTIAL__';
   var dashboard='__DASHBOARD_URL__';
+  var who='__USERNAME__';if(who.indexOf('__')===0)who='';
   var url=window.location.href;
   var identifier=null;
   var m=url.match(/arxiv\.org\/(?:pdf|abs|html)\/([\w.]+)/);
@@ -167,6 +168,49 @@
     libRow.appendChild(libLbl);
     libRow.appendChild(libSel);
     body.appendChild(libRow);
+    // Tags (only in bookmarklets that know whose they are): the person's tags already used in the chosen library
+    var picked={};
+    var tagRow=document.createElement('div');
+    tagRow.style.cssText='display:none;margin-bottom:8px;gap:6px;align-items:flex-start';
+    var tagLbl=document.createElement('div');
+    tagLbl.style.cssText='font-size:9px;color:#7eb8f7;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right;font-weight:600;padding-top:4px';
+    tagLbl.textContent='Tags';
+    var tagBox=document.createElement('div');
+    tagBox.style.cssText='flex:1;display:flex;flex-wrap:wrap;gap:4px;font-size:11px';
+    tagRow.appendChild(tagLbl);tagRow.appendChild(tagBox);
+    body.appendChild(tagRow);
+    function loadTags(){
+      picked={};
+      var lib=libSel.value==='__db__'?'':libSel.value;
+      if(!who||!lib){tagRow.style.display='none';return;}
+      tagRow.style.display='flex';tagBox.textContent='Loading tags...';
+      fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
+        body:JSON.stringify({credential:c,action:'list_tags',library:lib,_username:who})})
+      .then(function(r){return r.json();})
+      .then(function(td){
+        if(libSel.value!==lib)return;
+        if(!td||!Array.isArray(td.tags)){tagRow.style.display='none';return;}
+        tagBox.innerHTML='';
+        td.tags.forEach(function(t){
+          var chip=document.createElement('span');
+          chip.textContent=t.label;
+          chip.title='Click to add or remove this tag';
+          var col=t.color||'#f59e0b';
+          chip.style.cssText='cursor:pointer;padding:2px 8px;border-radius:10px;border:1px solid '+col+';color:'+col;
+          chip.onclick=function(){
+            if(picked[t.id]){delete picked[t.id];chip.style.background='transparent';chip.style.color=col;}
+            else{picked[t.id]=1;chip.style.background=col;chip.style.color='#000';}
+          };
+          tagBox.appendChild(chip);
+        });
+        var note=document.createElement('div');
+        note.style.cssText='width:100%;font-size:10px;color:#666;margin-top:2px';
+        note.textContent=(td.tags.length?'':'No tags used in this library yet. ')+'To create a new tag, use the BibMan dashboard.';
+        tagBox.appendChild(note);
+      })
+      .catch(function(){tagRow.style.display='none';});
+    }
+    libSel.onchange=loadTags;
     var dashLink=document.createElement('div');
     dashLink.style.cssText='font-size:10px;color:#555;margin-bottom:6px;margin-top:2px';
     dashLink.innerHTML='Other functions: <a href="'+dashboard+'" target="_blank" style="color:#7eb8f7">BibMan Dashboard</a>';
@@ -215,6 +259,7 @@
       libSel.appendChild(newOpt);
       savBtn.disabled=false;
       savBtn.style.opacity='1';
+      loadTags();
     })
     .catch(function(){
       libSel.innerHTML='';
@@ -246,7 +291,8 @@
           bibkey:ov.dataset.bibkey||'',
           identifiers:JSON.parse(ov.dataset.identifiers||'[]'),
           library:lv,
-          _username:localStorage.getItem('bibman_u_'+c.substring(0,8))||''
+          tag_ids:Object.keys(picked),
+          _username:who||(function(){try{return localStorage.getItem('bibman_u_'+c.substring(0,8))||'';}catch(e){return '';}})()
         })
       })
       .then(function(r){return r.json();})
@@ -268,7 +314,9 @@
           body2.innerHTML='';
           var ok=document.createElement('div');
           ok.style.cssText='color:#7ef7c2;text-align:center;padding:16px';
-          ok.textContent='Added: '+(result.bibkey||result.message||'done');
+          ok.textContent='Added: '+(result.bibkey||result.message||'done')
+            +(result.tagged?' (tagged: '+result.tagged+')':'')
+            +(result.tag_errors&&result.tag_errors.length?' (some tags could not be added: '+result.tag_errors[0]+')':'');
           body2.appendChild(ok);
           setTimeout(function(){ov.remove();},2000);
         }
