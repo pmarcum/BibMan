@@ -1351,6 +1351,14 @@ function gas(fn, ...args) {
 }
 // ── Version line under the logo: BibMan v<Core library>.<Dashboard web app>, with the page and server in its hover text ──
 let _aboutInfo = null;
+// The branch this page was loaded from (?branch=NAME opens a test page; otherwise main), for the hover text only
+let _pageBranch = 'main';
+try {
+  google.script.url.getLocation(loc => {
+    const b = String((loc && loc.parameter && loc.parameter.branch) || '').trim();
+    if (b && b !== 'main') { _pageBranch = b; _showVersion(); }
+  });
+} catch(e) {}
 function _shortDate(t) { try { return new Date(t).toLocaleDateString('en-CA'); } catch(e) { return String(t || '').slice(0, 10); } }
 function _showVersion() {
   const el = document.getElementById('app-version');
@@ -1366,12 +1374,15 @@ function _showVersion() {
     lines.push('', 'Updated for everyone at once, so without a version number:');
     const sv = a.server || {}, latest = a.server_latest || {};
     const short = c => String(c || '').slice(0, 7);
-    if (a.page) lines.push('Page: latest change ' + _shortDate(a.page.date) + ' (' + short(a.page.commit) + '), loaded from GitHub');
+    const mainPage = a.page ? _shortDate(a.page.date) + ' (' + short(a.page.commit) + ')' : '';
+    if (_pageBranch !== 'main') lines.push('Page: test branch ' + _pageBranch + ', loaded from GitHub' + (mainPage ? ' (main\u2019s latest page change: ' + mainPage + ')' : ''));
+    else if (a.page) lines.push('Page: latest change ' + mainPage + ', loaded from GitHub');
     else lines.push('Page: loaded from GitHub (GitHub could not be asked for its date just now)');
+    const mainServer = 'main\u2019s latest server change is ' + _shortDate(latest.date) + ' (' + short(latest.commit) + ')';
     if (a.server_update === false) lines.push('Server: running the change of ' + _shortDate(sv.date) + ' (' + short(sv.commit) + '), up to date with GitHub');
     else if (a.server_update === true) lines.push('Server: ' + (sv.commit ? 'running the change of ' + _shortDate(sv.date) + ' (' + short(sv.commit) + '); ' : '') + 'GitHub has newer server changes (' + _shortDate(latest.date) + ', ' + short(latest.commit) + '): on the VM, install the new bibman_e2micro_server.py, test and restart BibMan');
-    else if (a.server_on_github === true && a.server_in_main === false) lines.push('Server: running a version that is on GitHub but not in main (fingerprint ' + (sv.fingerprint || '?') + '): on a test branch, or older than main\u2019s last 10 server versions; main\u2019s latest server change is ' + _shortDate(latest.date) + ' (' + short(latest.commit) + ')');
-    else if (a.server_on_github === false) lines.push('Server: running a version that is not on GitHub (fingerprint ' + (sv.fingerprint || '?') + '); GitHub\u2019s latest server change is ' + _shortDate(latest.date) + ' (' + short(latest.commit) + ')');
+    else if (a.server_on_github === true && a.server_in_main === false) lines.push('Server: running a version that is on GitHub but not yet in main (fingerprint ' + (sv.fingerprint || '?') + '), normally a test branch that hasn\u2019t been merged, or one older than main\u2019s last 10 server versions. ' + mainServer + '.');
+    else if (a.server_on_github === false) lines.push('Server: running a version that is newer than main or not on GitHub at all (fingerprint ' + (sv.fingerprint || '?') + '), for example one installed before it was pushed. ' + mainServer + '.');
     else lines.push('Server: running the version with fingerprint ' + (sv.fingerprint || '?') + ' (GitHub could not be asked just now)');
   }
   el.textContent = name;
