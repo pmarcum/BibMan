@@ -190,6 +190,19 @@ def sweep_orphan_embeddings(conn) -> tuple:
             removed.append(0)
     return tuple(removed)
 
+# The guest bookmarklets' keys (9 Nov 2026; see "Guest bookmarklets" further down)
+GUEST_KEYS_TABLE = """CREATE TABLE IF NOT EXISTS guest_keys (
+    id           TEXT PRIMARY KEY,
+    key          TEXT NOT NULL UNIQUE,
+    project      TEXT NOT NULL,
+    library_id   TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ends_on      TEXT NOT NULL,
+    ended_now_at DATETIME,
+    ended_now_by TEXT,
+    papers_added INTEGER NOT NULL DEFAULT 0)"""
+
 # ── Tags: one label once per person on the paper itself and once on each of its notes ────────────────────────────
 # Databases made before note tagging have UNIQUE(paper_id, user_id, label_id) on paper_tags, so a label could be used
 # only once per paper per person, paper and notes together, and further uses were silently ignored. The rule is now a
@@ -433,7 +446,9 @@ def get_db_connection():
 # never waits for GitHub except the very first after a restart (at most ABOUT_FIRST_WAIT seconds). The answer rides
 # on GET /api/libraries/current, which the dashboard asks for when it starts:
 #   about = {server: {fingerprint, commit?, date?}, page: {commit, date} | None, server_update: True | False | None,
-#            server_on_github: True | False | None, server_latest: {commit, date} | None}
+#            server_on_github: True | False | None, server_in_main: True | False | None, server_latest: {commit, date} | None}
+# server_update is True only when the running file is one of main's last ABOUT_HISTORY_DEPTH server versions (so an
+# older one); a file that is on GitHub but not in main's recent history (e.g. on a test branch) gives server_in_main False.
 GITHUB_REPO          = os.environ.get('BIBMAN_GITHUB_REPO', 'pmarcum/BibMan').strip()   # owner/repo of this install
 SERVER_FILE_IN_REPO  = 'cloud/bibman_e2micro_server.py'
 ABOUT_CACHE_SECONDS  = 600
@@ -457,33 +472,61 @@ def _github(method, path, params=None):
                             headers={'User-Agent': 'BibMan-server', 'Accept': 'application/vnd.github+json'})
 
 def _latest_commit(path):
-    r = _github('GET', 'commits', {'path': path, 'per_page': 1})
+    return _commits(path, 1)[0]
+
+def _commits(path, n):
+    """main's last n commits that changed this file, newest first."""
+    r = _github('GET', 'commits', {'path': path, 'per_page': n})
     r.raise_for_status()
-    c = r.json()[0]
-    return {'commit': c['sha'], 'date': c['commit']['committer']['date']}
+    return [{'commit': c['sha'], 'date': c['commit']['committer']['date']} for c in r.json()]
+
+def _server_blob_at(ref=None):
+    """The server file's blob hash in main (or at a given commit), from its folder listing (names and hashes only)."""
+    folder, name = SERVER_FILE_IN_REPO.rsplit('/', 1)
+    r = _github('GET', f'contents/{folder}', {'ref': ref} if ref else None)
+    r.raise_for_status()
+    return next((e.get('sha') for e in r.json() if e.get('name') == name), '')
+
+# Where the running server sits in main's history, worked out once for each (running version, main's latest server
+# change): looking back costs one GitHub request per older version, so it is not repeated every 10 minutes.
+ABOUT_HISTORY_DEPTH = 10      # how many of main's server versions are looked at (the newest included)
+_HISTORY = {'key': None, 'value': None}
+
+def _place_in_main(history):
+    """{'found': {commit, date} | None, 'on_github': bool}: is the running version one of main's earlier versions?"""
+    key = (RUNNING_SERVER_BLOB, history[0]['commit'])
+    if _HISTORY['key'] == key:
+        return _HISTORY['value']
+    found = next((c for c in history[1:] if _server_blob_at(c['commit']) == RUNNING_SERVER_BLOB), None)
+    on_github = True
+    if not found:
+        r = _github('HEAD', f'git/blobs/{RUNNING_SERVER_BLOB}')   # anywhere on GitHub, e.g. on a test branch?
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+        on_github = r.status_code == 200
+    _HISTORY.update(key=key, value={'found': found, 'on_github': on_github})
+    return _HISTORY['value']
 
 def compute_about():
     """Ask GitHub; on any failure give only the server's own fingerprint."""
     own = {'fingerprint': RUNNING_SERVER_BLOB[:12]}
     try:
-        page   = _latest_commit('Index.html')
-        latest = _latest_commit(SERVER_FILE_IN_REPO)
-        folder, name = SERVER_FILE_IN_REPO.rsplit('/', 1)
-        r = _github('GET', f'contents/{folder}')          # the folder listing: names and blob hashes, no file contents
-        r.raise_for_status()
-        github_blob = next((e.get('sha') for e in r.json() if e.get('name') == name), '')
-        if RUNNING_SERVER_BLOB and github_blob == RUNNING_SERVER_BLOB:
+        page    = _latest_commit('Index.html')
+        history = _commits(SERVER_FILE_IN_REPO, ABOUT_HISTORY_DEPTH)
+        latest  = history[0]
+        if RUNNING_SERVER_BLOB and _server_blob_at() == RUNNING_SERVER_BLOB:
             return {'server': {**own, **latest}, 'page': page, 'server_update': False, 'server_on_github': True,
-                    'server_latest': latest}
-        r = _github('HEAD', f'git/blobs/{RUNNING_SERVER_BLOB}')   # is the running version an older GitHub version?
-        if r.status_code not in (200, 404):
-            r.raise_for_status()
-        on_github = r.status_code == 200
-        return {'server': own, 'page': page, 'server_update': True if on_github else None, 'server_on_github': on_github,
-                'server_latest': latest}
+                    'server_in_main': True, 'server_latest': latest}
+        place = _place_in_main(history)
+        if place['found']:   # an earlier version of main: an update is waiting
+            return {'server': {**own, **place['found']}, 'page': page, 'server_update': True, 'server_on_github': True,
+                    'server_in_main': True, 'server_latest': latest}
+        return {'server': own, 'page': page, 'server_update': None, 'server_on_github': place['on_github'],
+                'server_in_main': False, 'server_latest': latest}
     except Exception as e:
         log.info(f'about: GitHub could not be asked ({e})')
-        return {'server': own, 'page': None, 'server_update': None, 'server_on_github': None, 'server_latest': None}
+        return {'server': own, 'page': None, 'server_update': None, 'server_on_github': None, 'server_in_main': None,
+                'server_latest': None}
 
 def _refresh_about():
     value = None
@@ -507,7 +550,7 @@ def get_about():
         with _ABOUT_LOCK:
             value = _ABOUT['value']
     return value or {'server': {'fingerprint': RUNNING_SERVER_BLOB[:12]}, 'page': None, 'server_update': None,
-                     'server_on_github': None, 'server_latest': None}
+                     'server_on_github': None, 'server_in_main': None, 'server_latest': None}
 
 def get_current_library_id(conn=None):
     """Return (library_id, library_name) for the current library."""
@@ -771,6 +814,12 @@ def _ensure_columns(conn):
     # Add annotation_id column to existing paper_tags if missing
     try:
         conn.execute('ALTER TABLE paper_tags ADD COLUMN annotation_id TEXT DEFAULT NULL')
+        conn.commit()
+    except Exception:
+        pass
+    # guest_keys table: guest bookmarklets (9 Nov 2026), see "Guest bookmarklets" below
+    try:
+        conn.execute(GUEST_KEYS_TABLE)
         conn.commit()
     except Exception:
         pass
@@ -1394,7 +1443,7 @@ def ingest_paper_background(paper_id: str, bibcode: str, identifiers: list,
         )
         if not content:
             conn = get_db_connection()
-            # pdf_extracted=3 → no free PDF (paywalled) — use grey dot
+            # pdf_extracted=3 → no free PDF (paywalled) — use gray dot
             # pdf_extracted=2 → fetch/extraction error — use red dot, can retry
             extracted_val = 3 if no_free_pdf else 2
             conn.execute('UPDATE papers SET pdf_extracted=? WHERE id=?',
@@ -4924,6 +4973,163 @@ def add_team_member():
 def remove_team_member(member_id):
     conn = get_db_connection()
     conn.execute('DELETE FROM team_members WHERE id=?', (member_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({'ok': True})
+
+
+# ── Guest bookmarklets (9 Nov 2026) ───────────────────────────────────────────────────────────────────────────────
+# One shared key per paper/proposal project, for outside guests. A guest bookmarklet carries only its key (never
+# GAS_CREDENTIAL): the bookmarklet web app checks the key here on every click (GET /api/guest-keys/check) and lets it
+# read a paper's details, list the shared tags already used in the key's library, and add papers to that one library,
+# recorded as guest-<project>. Admins and core members manage keys from the dashboard (the Core library checks who may).
+#   - project: up to GUEST_PROJECT_MAX characters; one key per project (case does not count) unless that key was
+#     ended with "End now", which is final
+#   - ends_on: the last day the key works (through midnight, California time); it may be changed, also to reopen a
+#     key whose date has passed, but must be today or later
+#   - ended keys stay listed; nothing is deleted
+# (The table, GUEST_KEYS_TABLE, is defined next to PAPER_TAGS_TABLE.)
+GUEST_PROJECT_MAX = 40
+GUEST_TIME_ZONE   = 'America/Los_Angeles'
+
+def _guest_today():
+    """Today's date in California, as YYYY-MM-DD."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(GUEST_TIME_ZONE)).date().isoformat()
+    except Exception:   # no time-zone data on this machine: Pacific Standard Time
+        from datetime import timedelta
+        return (datetime.now(timezone.utc) - timedelta(hours=8)).date().isoformat()
+
+def _guest_date(value):
+    """A valid YYYY-MM-DD date that is today (California) or later, else None."""
+    value = str(value or '').strip()
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+    except ValueError:
+        return None
+    return value if value >= _guest_today() else None
+
+def _guest_state(row):
+    if row['ended_now_at']:
+        return 'ended'
+    return 'active' if row['ends_on'] >= _guest_today() else 'past_date'
+
+def _guest_row(conn, where, args):
+    return conn.execute(f'''SELECT g.*, l.name AS library FROM guest_keys g LEFT JOIN libraries l ON l.id = g.library_id
+                           WHERE {where}''', args).fetchone()
+
+def _guest_public(row):
+    d = dict(row)
+    d['state'] = _guest_state(row)
+    d['guest_name'] = 'guest-' + row['project']
+    return d
+
+@app.route('/api/guest-keys', methods=['GET'])
+@gas_auth_required
+def list_guest_keys():
+    """Every guest key: active ones first (newest first), then those whose date has passed, then ended ones."""
+    conn = get_db_connection()
+    rows = conn.execute('''SELECT g.*, l.name AS library FROM guest_keys g LEFT JOIN libraries l ON l.id = g.library_id
+                           ORDER BY g.created_at DESC''').fetchall()
+    conn.close()
+    order = {'active': 0, 'past_date': 1, 'ended': 2}
+    keys = sorted((_guest_public(r) for r in rows), key=lambda k: order[k['state']])
+    return jsonify({'keys': keys, 'today': _guest_today(), 'project_max': GUEST_PROJECT_MAX})
+
+@app.route('/api/guest-keys', methods=['POST'])
+@gas_auth_required
+def create_guest_key():
+    """Create a project's guest key; if the project already has one that was not ended with End now, return that."""
+    data    = request.json or {}
+    project = (data.get('project') or '').strip()
+    library = (data.get('library') or '').strip()
+    if not project:
+        return err('Give the project a name.')
+    if len(project) > GUEST_PROJECT_MAX:
+        return err(f'The project name can be at most {GUEST_PROJECT_MAX} characters.')
+    ends_on = _guest_date(data.get('ends_on'))
+    if not ends_on:
+        return err('The end date must be today or later.')
+    conn = get_db_connection()
+    try:
+        lib = conn.execute('SELECT id FROM libraries WHERE name=?', (library,)).fetchone()
+        if not lib:
+            return err(f'Library not found: {library}', 404)
+        same = _guest_row(conn, 'lower(g.project) = lower(?) AND g.ended_now_at IS NULL', (project,))
+        if same:
+            return jsonify({'ok': True, 'existing': True, 'key': _guest_public(same)})
+        import secrets
+        key_id = str(uuid.uuid4())
+        conn.execute('INSERT INTO guest_keys (id, key, project, library_id, created_by, ends_on) VALUES (?,?,?,?,?,?)',
+                     (key_id, secrets.token_urlsafe(24), project, lib['id'], get_user_id(), ends_on))
+        conn.commit()
+        return jsonify({'ok': True, 'existing': False, 'key': _guest_public(_guest_row(conn, 'g.id = ?', (key_id,)))})
+    finally:
+        conn.close()
+
+@app.route('/api/guest-keys/<key_id>/ends-on', methods=['POST'])
+@gas_auth_required
+def set_guest_key_end_date(key_id):
+    """Change a key's end date (today or later); this also reopens a key whose date has passed, not an ended one."""
+    ends_on = _guest_date((request.json or {}).get('ends_on'))
+    if not ends_on:
+        return err('The end date must be today or later.')
+    conn = get_db_connection()
+    try:
+        row = _guest_row(conn, 'g.id = ?', (key_id,))
+        if not row:
+            return err('Guest key not found', 404)
+        if row['ended_now_at']:
+            return err('This key was ended with End now, which is final. Create a new key for the project instead.')
+        conn.execute('UPDATE guest_keys SET ends_on=? WHERE id=?', (ends_on, key_id))
+        conn.commit()
+        return jsonify({'ok': True, 'key': _guest_public(_guest_row(conn, 'g.id = ?', (key_id,)))})
+    finally:
+        conn.close()
+
+@app.route('/api/guest-keys/<key_id>/end-now', methods=['POST'])
+@gas_auth_required
+def end_guest_key_now(key_id):
+    """End a key at once, for good."""
+    conn = get_db_connection()
+    try:
+        row = _guest_row(conn, 'g.id = ?', (key_id,))
+        if not row:
+            return err('Guest key not found', 404)
+        if not row['ended_now_at']:
+            conn.execute("UPDATE guest_keys SET ended_now_at=datetime('now'), ended_now_by=? WHERE id=?",
+                         (get_user_id(), key_id))
+            conn.commit()
+        return jsonify({'ok': True, 'key': _guest_public(_guest_row(conn, 'g.id = ?', (key_id,)))})
+    finally:
+        conn.close()
+
+@app.route('/api/guest-keys/check', methods=['GET'])
+@gas_auth_required
+def check_guest_key():
+    """What a guest bookmarklet may do: ok with its project, guest name and library, or why not."""
+    key = (request.args.get('key') or '').strip()
+    conn = get_db_connection()
+    row = _guest_row(conn, 'g.key = ?', (key,)) if key else None
+    conn.close()
+    if not row:
+        return jsonify({'ok': False, 'reason': 'unknown'})
+    info = {k: row[k] for k in ('id', 'project', 'library', 'ends_on', 'created_by', 'ended_now_by')}
+    info['guest_name'] = 'guest-' + row['project']
+    state = _guest_state(row)
+    if state != 'active':
+        return jsonify({'ok': False, 'reason': state, **info})
+    if not row['library']:
+        return jsonify({'ok': False, 'reason': 'no_library', **info})
+    return jsonify({'ok': True, **info})
+
+@app.route('/api/guest-keys/<key_id>/added', methods=['POST'])
+@gas_auth_required
+def count_guest_paper(key_id):
+    """A guest added a paper with this key (counted for the dashboard's list)."""
+    conn = get_db_connection()
+    conn.execute('UPDATE guest_keys SET papers_added = papers_added + 1 WHERE id=?', (key_id,))
     conn.commit()
     conn.close()
     return jsonify({'ok': True})

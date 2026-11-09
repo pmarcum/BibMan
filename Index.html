@@ -368,6 +368,16 @@ select.lib-select:focus{outline:none;border-color:var(--accent)}
 .util-input:focus{border-color:var(--accent)}
 textarea.util-input{resize:both;min-height:160px;width:100%;box-sizing:border-box}
 .util-status{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:5px}
+/* ── Guest bookmarklets (admins and core members) ── */
+.gk-row{display:grid;grid-template-columns:1.3fr 1fr .9fr 1fr .5fr 2.2fr;gap:6px;align-items:center;
+        padding:6px 8px;border-bottom:1px solid var(--border);font-size:11px}
+.gk-head{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.gk-row.gk-off{opacity:.5}
+.gk-acts{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.gk-acts .btn-sm{padding:2px 7px;font-size:10px}
+.gk-acts input[type=date]{background:var(--bg);border:1px solid var(--border2);border-radius:4px;color:var(--text);font-size:10px;padding:1px 4px}
+.gk-link{display:flex;gap:6px;align-items:center;margin-top:8px}
+.gk-link input{flex:1;font-family:var(--mono);font-size:10px}
 /* ── Synonyms ── */
 .syn-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:4px;
           background:var(--bg);border:1px solid var(--border);margin-bottom:3px;font-size:11px}
@@ -570,7 +580,7 @@ mark.search-highlight{background:rgba(255,220,0,.35);color:inherit;
     <div class="nav-tab" onclick="showPanel('venn')">Venn Search<span class="nav-help" data-tip="Multi-concept passage search.&#10;Enter 2–6 search phrases to find passages&#10;that mention several concepts together.&#10;Results are shown as an UpSet plot — each&#10;bar is one Venn diagram intersection.&#10;Click a result to open that paper.">?</span></div>
     <div class="utilities-menu" id="utilities-menu">
       <div class="utilities-trigger" id="utilities-trigger" onclick="toggleUtilitiesDropdown()">
-        <span>Utilities</span> <span class="utilities-arrow">▾</span><span class="nav-help" data-tip="Common library tasks:&#10;• Import — bulk-import papers from a .bib file&#10;• Export — save library as a .bib file to Drive&#10;• Bookmarklet — install browser button to add papers&#10;  from ADS or arXiv without opening BibMan">?</span>
+        <span>Utilities</span> <span class="utilities-arrow">▾</span><span class="nav-help" data-tip="Common library tasks:&#10;• Import — bulk-import papers from a .bib file&#10;• Export — save library as a .bib file to Drive&#10;• Bookmarklet — install browser button to add papers&#10;  from ADS or arXiv without opening BibMan&#10;• Guest bookmarklets — for a project's outside guests&#10;  (admins and core members)">?</span>
       </div>
       <div class="utilities-dropdown" id="utilities-dropdown">
         <div class="utilities-item tip-left" onclick="utilDropdownImport()"
@@ -581,6 +591,9 @@ mark.search-highlight{background:rgba(255,220,0,.35);color:inherit;
         <div class="utilities-sep"></div>
         <div class="utilities-item tip-left" onclick="utilDropdownBookmarklet()"
           data-tip="Install a browser bookmarklet button to add&#10;papers to BibMan directly from ADS, arXiv,&#10;or journal websites with one click">Bookmarklet</div>
+        <div class="utilities-sep" id="util-sep-guests"></div>
+        <div class="utilities-item tip-left" id="util-item-guests" onclick="utilDropdownGuests()"
+          data-tip="Bookmarklets for outside guests of a project:&#10;they add papers to one library until an end date&#10;(admins and core members only)">Guest bookmarklets</div>
       </div>
     </div>
     <div class="utilities-menu" id="admin-menu">
@@ -870,7 +883,7 @@ or add new database">?</span>
             This is an <em>UpSet plot</em> — a way to show Venn diagram intersections that works clearly even with many search phrases.<br><br>
             <strong style="color:var(--accent2)">Each bar</strong> represents one region of the Venn diagram — a specific combination of phrases that co-occur in a passage.<br><br>
             <strong style="color:var(--accent2)">Bar height</strong> = number of passages in that intersection.<br><br>
-            <strong style="color:var(--accent2)">Colored dots below each bar</strong> show which phrases contributed. A colored dot means that phrase matched; a grey dot means it did not.<br><br>
+            <strong style="color:var(--accent2)">Colored dots below each bar</strong> show which phrases contributed. A colored dot means that phrase matched; a gray dot means it did not.<br><br>
             <strong style="color:var(--accent3,#7ef7c2)">Green bars</strong> = passages matching all your phrases (innermost Venn region).<br>
             <strong style="color:var(--accent)">Blue bars</strong> = passages matching some but not all phrases.<br><br>
             <strong>Click any bar</strong> to see the passages it represents in the list below.
@@ -1049,6 +1062,24 @@ or add new database">?</span>
         click the bookmarklet to add it to BibMan.<br>
         <strong>Works on:</strong> Sites with DOI, arXiv ID, ADS bibcode, or standard metadata.
       </div>
+    </div>
+    <div class="util-card" id="util-section-guests">
+      <h3>Guest bookmarklets</h3>
+      <p>For outside guests of a paper or proposal project: one bookmarklet per project, shared by all its guests. It adds
+        papers only to the library you choose, recorded as <b>guest-</b><i>project</i>, lets guests pick shared tags already
+        used in that library, and stops working by itself after the end date (midnight, California time). Guests need no
+        Google sign-in and no access code. Send them the install link; anyone with the link can add papers, so send it only
+        to the project's guests.</p>
+      <div class="util-row" style="flex-wrap:wrap">
+        <input class="util-input" id="gk-project" placeholder="project, e.g. TCAN26" maxlength="40" style="max-width:180px"
+               onkeydown="if(event.key==='Enter')createGuestKeyUI()">
+        <select class="util-input" id="gk-library" style="max-width:170px"></select>
+        <label style="font-size:11px;color:var(--muted)">ends <input type="date" class="util-input" id="gk-ends" style="max-width:150px"></label>
+        <button class="btn-sm primary" onclick="createGuestKeyUI()">Create</button>
+      </div>
+      <div class="util-status" id="gk-status"></div>
+      <div id="gk-new"></div>
+      <div id="gk-list" style="margin-top:12px"></div>
     </div>
     <div class="util-card" id="util-section-team">
       <h3>Team Members</h3>
@@ -1271,6 +1302,12 @@ window.addEventListener('load', async () => {
       + 'border:none;color:var(--accent);cursor:pointer;font-size:13px;opacity:.7">✕</button>';
     document.querySelector('.topbar').after(b);
   }
+  // ── Guest bookmarklets: only for admins and core members (Core 12) ──
+  if (!_clientConfig.canManageGuests) {
+    ['util-item-guests', 'util-sep-guests', 'util-section-guests'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.style.display = 'none';
+    });
+  }
   // ── Show Admin menu only for admins ──────────────────────────────────
   if (!_clientConfig.isAdmin) {
     const adminMenu = document.getElementById('admin-menu');
@@ -1332,7 +1369,8 @@ function _showVersion() {
     if (a.page) lines.push('Page: latest change ' + _shortDate(a.page.date) + ' (' + short(a.page.commit) + '), loaded from GitHub');
     else lines.push('Page: loaded from GitHub (GitHub could not be asked for its date just now)');
     if (a.server_update === false) lines.push('Server: running the change of ' + _shortDate(sv.date) + ' (' + short(sv.commit) + '), up to date with GitHub');
-    else if (a.server_update === true) lines.push('Server: GitHub has newer server changes (' + _shortDate(latest.date) + ', ' + short(latest.commit) + '): on the VM, install the new bibman_e2micro_server.py, test and restart BibMan');
+    else if (a.server_update === true) lines.push('Server: ' + (sv.commit ? 'running the change of ' + _shortDate(sv.date) + ' (' + short(sv.commit) + '); ' : '') + 'GitHub has newer server changes (' + _shortDate(latest.date) + ', ' + short(latest.commit) + '): on the VM, install the new bibman_e2micro_server.py, test and restart BibMan');
+    else if (a.server_on_github === true && a.server_in_main === false) lines.push('Server: running a version that is on GitHub but not in main (fingerprint ' + (sv.fingerprint || '?') + '): on a test branch, or older than main\u2019s last 10 server versions; main\u2019s latest server change is ' + _shortDate(latest.date) + ' (' + short(latest.commit) + ')');
     else if (a.server_on_github === false) lines.push('Server: running a version that is not on GitHub (fingerprint ' + (sv.fingerprint || '?') + '); GitHub\u2019s latest server change is ' + _shortDate(latest.date) + ' (' + short(latest.commit) + ')');
     else lines.push('Server: running the version with fingerprint ' + (sv.fingerprint || '?') + ' (GitHub could not be asked just now)');
   }
@@ -3471,6 +3509,7 @@ function utilDropdownExport()      { _closeUtilDropdown(); showUtilSection('util
 function utilDropdownReextract()   { _closeUtilDropdown(); showUtilSection('util-section-reextract'); }
 function utilDropdownBookmarklet() { _closeUtilDropdown(); showUtilSection('util-section-bookmarklet'); loadBookmarkletLink(); }
 function utilDropdownTeam()        { _closeUtilDropdown(); showUtilSection('util-section-team'); loadTeamMembers(); }
+function utilDropdownGuests()      { _closeUtilDropdown(); showUtilSection('util-section-guests'); loadGuestKeys(); }
 async function openTagPopoverForCurrentPaper(anchorEl) {
   if (!_current) return;
   await openTagPopover(_current.id, anchorEl);
@@ -3723,6 +3762,89 @@ function _toggleTagFilter(labelId) {
   applyFilter(_filter);
 }
 // ── Team management ───────────────────────────────────────────────────────────
+// ── Guest bookmarklets (Core 12; admins and core members) ───────────────────────
+// One key per project; the server keeps them (create, change the end date, End now; nothing is deleted).
+let _guestKeys = {}, _guestToday = '';
+function _gkPlusMonths(day, n) {
+  const d = new Date(day + 'T12:00:00'); d.setMonth(d.getMonth() + n);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function _gkState(k) {
+  return k.state === 'active' ? 'until ' + k.ends_on
+       : k.state === 'past_date' ? 'ended ' + k.ends_on
+       : 'ended now by ' + (k.ended_now_by || '?');
+}
+function _gkLinkBox(k) {
+  return '<div class="gk-link"><span style="font-size:11px;color:var(--muted)">Install link for ' + esc(k.project) + ':</span>' +
+    '<input class="util-input" readonly id="gk-link-' + esc(k.id) + '" value="' + esc(k.link || '') + '" onclick="this.select()">' +
+    '<button class="btn-sm" data-id="' + esc(k.id) + '" onclick="copyGuestLink(this.dataset.id)">Copy</button></div>';
+}
+async function loadGuestKeys() {
+  const list = document.getElementById('gk-list'), libSel = document.getElementById('gk-library');
+  list.innerHTML = '<div style="font-size:11px;color:var(--muted)">Loading…</div>';
+  try {
+    const [r, libs] = await Promise.all([gas('listGuestKeys'), gas('getLibraries')]);
+    _guestToday = r.today || '';
+    const keep = libSel.value;
+    libSel.innerHTML = libs.map(l => '<option value="' + esc(l.name) + '">' + esc(l.name) + '</option>').join('');
+    libSel.value = keep || _currentLibrary || (libs[0] && libs[0].name) || '';
+    const ends = document.getElementById('gk-ends');
+    ends.min = _guestToday; if (!ends.value || ends.value < _guestToday) ends.value = _gkPlusMonths(_guestToday, 3);
+    _guestKeys = {}; (r.keys || []).forEach(k => { _guestKeys[k.id] = k; });
+    const warn = r.captureUrlMissing ? '<div style="color:var(--red);font-size:11px;margin-bottom:6px">The dashboard project has no ' +
+      'BOOKMARKLET_CAPTURE_WEBAPP_URL Script Property, so no install links can be made.</div>' : '';
+    if (!(r.keys || []).length) { list.innerHTML = warn + '<div style="font-size:11px;color:var(--muted)">No guest bookmarklets yet.</div>'; return; }
+    list.innerHTML = warn + '<div class="gk-row gk-head"><span>Project</span><span>Library</span><span>Works</span><span>Created by</span><span>Papers</span><span></span></div>' +
+      r.keys.map(k => {
+        const id = esc(k.id), open = k.state !== 'ended';
+        const acts = !open ? '' :
+          '<button class="btn-sm" data-id="' + id + '" onclick="showGuestLink(this.dataset.id)">Link</button>' +
+          '<input type="date" id="gk-date-' + id + '" min="' + esc(_guestToday) + '" value="' + esc(k.ends_on >= _guestToday ? k.ends_on : _gkPlusMonths(_guestToday, 3)) + '">' +
+          '<button class="btn-sm" data-id="' + id + '" onclick="setGuestKeyDateUI(this.dataset.id)">' + (k.state === 'active' ? 'Change date' : 'Reopen') + '</button>' +
+          (k.state === 'active' ? '<button class="btn-sm" style="color:var(--red);border-color:var(--red)" data-id="' + id + '" onclick="endGuestKeyUI(this.dataset.id)">End now</button>' : '');
+        return '<div class="gk-row' + (k.state === 'active' ? '' : ' gk-off') + '"><span style="font-family:var(--mono);color:var(--accent)">' + esc(k.project) + '</span>' +
+          '<span>' + esc(k.library || '(library deleted)') + '</span><span>' + esc(_gkState(k)) + '</span><span>' + esc(k.created_by) + '</span>' +
+          '<span>' + esc(String(k.papers_added || 0)) + '</span><span class="gk-acts">' + acts + '</span></div>';
+      }).join('');
+  } catch(e) { list.innerHTML = '<div style="color:var(--red);font-size:11px">' + esc(e.message) + '</div>'; }
+}
+async function createGuestKeyUI() {
+  const status = document.getElementById('gk-status'), project = document.getElementById('gk-project').value.trim();
+  const library = document.getElementById('gk-library').value, ends = document.getElementById('gk-ends').value;
+  if (!project) { status.textContent = 'Give the project a name.'; return; }
+  status.textContent = 'Creating…';
+  try {
+    const r = await gas('createGuestKey', project, library, ends);
+    const k = r.key;
+    status.textContent = r.existing
+      ? (k.state === 'active'
+          ? 'The project ' + k.project + ' already has a guest bookmarklet (' + k.library + ', until ' + k.ends_on + '): here is its link.'
+          : 'The project ' + k.project + '’s guest bookmarklet ended on ' + k.ends_on + '. To reopen it, give it a new date in the list below.')
+      : 'Created. Send this link to the guests of ' + k.project + '.';
+    _guestKeys[k.id] = k;
+    document.getElementById('gk-new').innerHTML = k.state === 'active' ? _gkLinkBox(k) : '';
+    if (!r.existing) document.getElementById('gk-project').value = '';
+    loadGuestKeys();
+  } catch(e) { status.textContent = e.message; }
+}
+function showGuestLink(id) { const k = _guestKeys[id]; if (k) document.getElementById('gk-new').innerHTML = _gkLinkBox(k); }
+async function copyGuestLink(id) {
+  const inp = document.getElementById('gk-link-' + id); if (!inp) return;
+  try { await navigator.clipboard.writeText(inp.value); }
+  catch(e) { inp.select(); try { document.execCommand('copy'); } catch(e2) {} }
+  notify('Install link copied', 'success');
+}
+async function setGuestKeyDateUI(id) {
+  const k = _guestKeys[id], d = document.getElementById('gk-date-' + id).value;
+  try { await gas('setGuestKeyEndDate', id, d); notify(k.project + ': works until ' + d, 'success'); loadGuestKeys(); }
+  catch(e) { notify(e.message, 'error', 5000); }
+}
+async function endGuestKeyUI(id) {
+  const k = _guestKeys[id]; if (!k) return;
+  if (!confirm('End the guest bookmarklet for ' + k.project + ' now?\n\nThis is final: it can’t be reopened. Its guests’ bookmarks stop working at once; for the project you would create a new one, with a new link.')) return;
+  try { await gas('endGuestKeyNow', id); notify(k.project + ': guest bookmarklet ended', 'success'); document.getElementById('gk-new').innerHTML = ''; loadGuestKeys(); }
+  catch(e) { notify(e.message, 'error', 5000); }
+}
 async function loadTeamMembers() {
   const el = document.getElementById('team-member-list');
   if (!el) return;
@@ -3946,7 +4068,7 @@ async function dismissMentionBanner(mentionId) {
   await gas('markMentionSeen', mentionId);
   refreshMentionBadge();
 }
-// The button has no link at all until the real bookmarklet code has arrived (it starts greyed out, "Preparing
+// The button has no link at all until the real bookmarklet code has arrived (it starts grayed out, "Preparing
 // bookmarklet…", and cannot be dragged); a failure says so, and clicking the button then tries again. The code is
 // fetched once per page, starting when the Utilities menu opens.
 let _bookmarkletState = 'idle';   // idle | loading | ready | failed
@@ -4269,7 +4391,7 @@ function drawAnnotationHighlights(hl, pn, annotations) {
 // ── Text selection state ──────────────────────────────────────────────────────
 function clearSelectionPreview() {
   if (!_selectionData) return;
-  // Redraw the page's highlight canvas without the grey preview
+  // Redraw the page's highlight canvas without the gray preview
   const pageEl = document.getElementById(`pdf-page-${_selectionData.pageNum}`);
   if (pageEl) {
     const hl = pageEl.querySelector('.pdf-highlight-canvas');
@@ -4287,7 +4409,7 @@ function clearSelectionPreview() {
 document.addEventListener('mousedown', e => {
   const hint = document.getElementById('sel-hint');
   if (hint && hint.style.display !== 'none') _hideSelHint();
-  // Clear grey preview on click unless it's the highlight box (opened with H)
+  // Clear gray preview on click unless it's the highlight box (opened with H)
   const selPopup = document.getElementById('selection-popup');
   if (!selPopup?.classList.contains('visible')) clearSelectionPreview();
 });
@@ -4434,7 +4556,7 @@ function initTextSelection() {
     }
     if (!rects.length) return;
     _selectionData = { quote, rects, pageNum };
-    // Draw light grey preview highlight on the canvas to show selected area
+    // Draw light gray preview highlight on the canvas to show selected area
     if (pageEl) {
       const hl = pageEl.querySelector('.pdf-highlight-canvas');
       if (hl) {

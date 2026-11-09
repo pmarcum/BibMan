@@ -3,6 +3,9 @@
   var c='__CREDENTIAL__';
   var dashboard='__DASHBOARD_URL__';
   var who='__USERNAME__';if(who.indexOf('__')===0)who='';
+  // A guest bookmarklet (Core 12) carries only its guest key: the key decides the library and the name
+  var g='__GUEST_KEY__';if(g.indexOf('__')===0)g='';
+  function auth(o){if(g)o.guest_key=g;else o.credential=c;return JSON.stringify(o);}
   var url=window.location.href;
   var identifier=null;
   var m=url.match(/arxiv\.org\/(?:pdf|abs|html)\/([\w.]+)/);
@@ -24,7 +27,7 @@
   box.style.cssText='background:#17171a;border:1px solid #353540;border-radius:8px;padding:20px;width:430px;max-width:98vw;color:#e8e8f0;font-size:13px;max-height:90vh;overflow-y:auto;cursor:move;user-select:none;position:absolute;box-sizing:border-box';
   var hdr=document.createElement('div');
   hdr.style.cssText='color:#7eb8f7;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px';
-  hdr.textContent='Add to BibMan';
+  hdr.textContent=g?'Add to BibMan: guest':'Add to BibMan';
   box.appendChild(hdr);
   var bdy=document.createElement('div');
   bdy.id='__bm_body__';
@@ -75,7 +78,7 @@
   // at the top of the box just below the header.
   var _updateNoticeShown=false;
   function _maybeShowUpdateNotice(resp){
-    if(_updateNoticeShown)return;
+    if(_updateNoticeShown||g)return;   // guests can't act on it
     if(!resp||!resp.bibman_bookmarklet_capture_update_available)return;
     _updateNoticeShown=true;
     var strip=document.createElement('div');
@@ -101,7 +104,7 @@
   fetch(u,{
     method:'POST',
     headers:{'Content-Type':'text/plain'},
-    body:JSON.stringify({credential:c,action:'extract_and_preview',url:url,identifier:identifier,title:document.title})
+    body:auth({action:'extract_and_preview',url:url,identifier:identifier,title:document.title})
   })
   .then(function(r){return r.json();})
   .then(function(meta){
@@ -182,10 +185,10 @@
     function loadTags(){
       picked={};
       var lib=libSel.value==='__db__'?'':libSel.value;
-      if(!who||!lib){tagRow.style.display='none';return;}
+      if(!(who||g)||!lib){tagRow.style.display='none';return;}
       tagRow.style.display='flex';tagBox.textContent='Loading tags...';
       fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
-        body:JSON.stringify({credential:c,action:'list_tags',library:lib,_username:who})})
+        body:auth({action:'list_tags',library:lib,_username:who})})
       .then(function(r){return r.json();})
       .then(function(td){
         if(libSel.value!==lib)return;
@@ -214,7 +217,7 @@
     var dashLink=document.createElement('div');
     dashLink.style.cssText='font-size:10px;color:#555;margin-bottom:6px;margin-top:2px';
     dashLink.innerHTML='Other functions: <a href="'+dashboard+'" target="_blank" style="color:#7eb8f7">BibMan Dashboard</a>';
-    body.appendChild(dashLink);
+    if(!g)body.appendChild(dashLink);
     var srcDiv=document.createElement('div');
     srcDiv.style.cssText='font-size:10px;margin-bottom:10px';
     srcDiv.innerHTML='Source: <span style="color:'+srcColor+'">'+src+'</span>';
@@ -234,6 +237,24 @@
     btnRow.appendChild(canBtn);
     btnRow.appendChild(savBtn);
     body.appendChild(btnRow);      
+    // A guest bookmarklet's one library, from its key
+    if(g){
+      fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},body:auth({action:'guest_info'})})
+      .then(function(r){return r.json();})
+      .then(function(gi){
+        libSel.innerHTML='';
+        if(gi.error){libSel.disabled=true;srcDiv.style.color='#f77e7e';srcDiv.textContent=gi.error;return;}
+        hdr.textContent='Add to BibMan: guest ('+gi.project+')';
+        var o=document.createElement('option');
+        o.value=gi.library;o.textContent=gi.library;
+        libSel.appendChild(o);libSel.disabled=true;
+        libSel.title='This guest bookmarklet adds papers to this library only (until '+gi.ends_on+')';
+        savBtn.disabled=false;
+        savBtn.style.opacity='1';
+        loadTags();
+      })
+      .catch(function(){libSel.innerHTML='';srcDiv.style.color='#f77e7e';srcDiv.textContent='BibMan could not be reached. Please try again.';});
+    }else
     // Fetch libraries in parallel while user reviews metadata
     fetch(u,{method:'POST',headers:{'Content-Type':'text/plain'},
       body:JSON.stringify({credential:c,action:'get_libraries'})})
@@ -277,8 +298,8 @@
       fetch(u,{
         method:'POST',
         headers:{'Content-Type':'text/plain'},
-        body:JSON.stringify({
-          credential:c,action:'save_captured',url:url,
+        body:auth({
+          action:'save_captured',url:url,
           title:document.getElementById('__bm_t__').value,
           authors:document.getElementById('__bm_a__').value,
           year:document.getElementById('__bm_y__').value,

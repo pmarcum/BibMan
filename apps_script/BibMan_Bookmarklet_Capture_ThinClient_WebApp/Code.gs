@@ -1,7 +1,8 @@
 /**
  * BibMan Bookmarklet Capture — Thin Client Shell
  * ============================================
- * Handles all bookmarklet POST requests. Delegates all logic to BibMan_Core.
+ * Handles all bookmarklet POST requests, and (since Capture 12) shows guests the page from which they drag a guest
+ * bookmarklet (this web app's address + ?guest=KEY; the dashboard gives out that link). Delegates all logic to BibMan_Core.
  *
  * Deploy as Web App:
  *   Execute as: Me (the deployer) ← correct, bookmarklet POSTs have no
@@ -61,8 +62,13 @@ function _cfg() {
   };
 }
 
-// ── Web app entry point ────────────────────────────────────────────────────────
+// ── Web app entry points ───────────────────────────────────────────────────────
 function doPost(e) { return BibManCore.captureDoPost(_cfg(), e); }
+// A guest's install page (Capture 12, needs Core 12 or later)
+function doGet(e) {
+  return HtmlService.createHtmlOutput(BibManCore.captureGuestPage(_cfg(), (e && e.parameter) || {}))
+    .setTitle('BibMan guest bookmarklet');
+}
 
 // ── One-time PDF check (run from the editor: select the function, then Run; results in the Execution log) ──
 // checkPdfLinks lists the PDFs in BibMan_PDFs that are not "viewable by anyone with the link" and changes nothing;

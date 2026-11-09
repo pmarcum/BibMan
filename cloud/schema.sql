@@ -239,6 +239,19 @@ CREATE UNIQUE INDEX ux_paper_tags_place ON paper_tags(paper_id, user_id, label_i
 
 CREATE INDEX idx_search_id ON passages(search_id);
 
+-- guest bookmarklets (9 Nov 2026): one shared key per project, adding papers to one library until ends_on
+CREATE TABLE guest_keys (
+    id           TEXT PRIMARY KEY,
+    key          TEXT NOT NULL UNIQUE,
+    project      TEXT NOT NULL,
+    library_id   TEXT NOT NULL,
+    created_by   TEXT NOT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ends_on      TEXT NOT NULL,
+    ended_now_at DATETIME,
+    ended_now_by TEXT,
+    papers_added INTEGER NOT NULL DEFAULT 0);
+
 CREATE INDEX idx_annotations_passage_id ON annotations(passage_id);
 
 CREATE INDEX idx_passages_id ON passages(id);

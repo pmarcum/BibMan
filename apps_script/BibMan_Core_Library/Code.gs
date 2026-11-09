@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 11;
+const BIBMAN_CORE_LIBRARY_VERSION = 12;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -207,6 +207,8 @@ function getClientConfig(config) {
     currentUser:                       email ? email.split('@')[0] : '',
     currentUserEmail:                  email || '',
     isAdmin:                           _isAdmin_(config, email),
+    // Admins and core members manage guest bookmarklets (Core 12)
+    canManageGuests:                   _isCoreMember_(config, email),
     coreLibraryVersion:                config.linkedCoreVersion || BIBMAN_CORE_LIBRARY_VERSION,
     frontendThinClientVersion:         config.frontendThinClientVersion || 1,
     bookmarkletCaptureVersion:         config.bookmarkletCaptureVersion || 1,
@@ -316,6 +318,11 @@ function dispatch(config, fn, ...args) {
     getProxyPdfBase64:     (paperId) => getProxyPdfBase64(config, paperId),
     // Bookmarklet
     getBookmarkletCode:    () => getBookmarkletCode(config),
+    // Guest bookmarklets (Core 12; admins and core members only)
+    listGuestKeys:         () => listGuestKeys(config),
+    createGuestKey:        (project, library, endsOn) => createGuestKey(config, project, library, endsOn),
+    setGuestKeyEndDate:    (id, endsOn) => setGuestKeyEndDate(config, id, endsOn),
+    endGuestKeyNow:        (id) => endGuestKeyNow(config, id),
     // Mentions
     createMention:         (data) => createMention(config, data),
     getUnreadMentions:     () => getUnreadMentions(config),
@@ -1115,23 +1122,30 @@ function exportBibText(config, library) {
 // ── 11. BOOKMARKLET ───────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
 function getBookmarkletCode(config) {
-  const captureUrl    = config.captureUrl    || '';
-  const credential = config.credential || '';
-  const dashUrl    = config.dashUrl    || '';
-  const bmUrl = 'https://raw.githubusercontent.com/pmarcum/BibMan/main/bookmarklet.js?t=' + Date.now();
   // The BibMan name of the person dragging the bookmarklet (the part of their Google address before @, as everywhere
   // in BibMan) is built into it (Core 11): papers they add are recorded as theirs, and they can pick their tags.
   let who = '';
   try { who = (Session.getActiveUser().getEmail() || '').split('@')[0]; } catch(e) {}
-  const whoJs = who.replace(/\\/g, '\\\\').replace(/'/g, "\\'");   // safe inside the bookmarklet's '…' string, unchanged otherwise
+  return _bookmarkletCode_(config.captureUrl || '', { credential: config.credential || '', dashUrl: config.dashUrl || '', who: who });
+}
+
+// The bookmarklet's code from GitHub with its blanks filled in. A guest bookmarklet (Core 12) gets only its guest key:
+// no credential, no name and no dashboard address.
+function _bookmarkletCode_(captureUrl, fill) {
+  const bmUrl = 'https://raw.githubusercontent.com/pmarcum/BibMan/main/bookmarklet.js?t=' + Date.now();
+  const js = t => String(t || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");   // safe inside the bookmarklet's '…' strings, unchanged otherwise
   try {
     const resp = UrlFetchApp.fetch(bmUrl, { muteHttpExceptions: true, deadline: 10 });
     if (resp.getResponseCode() === 200) {
-      const code = resp.getContentText()
-        .replace('__GAS_URL__', captureUrl)
-        .replace('__CREDENTIAL__', credential)
-        .replace('__DASHBOARD_URL__', dashUrl)
-        .replace('__USERNAME__', function() { return whoJs; });
+      const text = resp.getContentText();
+      // A guest bookmarklet needs a bookmarklet.js that knows guest keys; an older one would be a useless bookmark
+      if (fill.guestKey && text.indexOf('__GUEST_KEY__') < 0) return '';
+      const code = text
+        .replace('__GAS_URL__', function() { return js(captureUrl); })
+        .replace('__CREDENTIAL__', function() { return js(fill.credential); })
+        .replace('__DASHBOARD_URL__', function() { return js(fill.dashUrl); })
+        .replace('__USERNAME__', function() { return js(fill.who); })
+        .replace('__GUEST_KEY__', function() { return js(fill.guestKey); });
       return 'javascript:' + encodeURIComponent(code);
     }
   } catch(err) {
@@ -1342,6 +1356,8 @@ function getTaggedPapers(config, labelIds, everyone) {
  *   get_libraries       — returns library list + current (no credential required)
  *   extract_and_preview — ADS lookup or Gemini extraction for a URL/identifier
  *   save_captured       — saves a paper to the backend (credential required)
+ * A request with guest_key (a guest bookmarklet, Core 12) goes to _guestCapture_ instead: guest_info, extract_and_preview,
+ * list_tags and save_captured only, for the key's library and under its guest name (section 14b).
  */
 function captureDoPost(config, e) {
   // Build inner response as a plain object first, then inject update flag,
@@ -1360,54 +1376,12 @@ function captureDoPost(config, e) {
           return { libraries: [], current: '', error: err.message };
         }
       }
+      // ── A guest bookmarklet (Core 12): only its own guest key, never the credential ──
+      if (data.guest_key) return _guestCapture_(config, data);
       // ── All other actions require credential ──────────────────────────────
       if (data.credential !== credential) { return { error: 'unauthorized' }; }
       // ── extract_and_preview ───────────────────────────────────────────────
-      if (data.action === 'extract_and_preview') {
-        const identifier = (data.identifier || '').trim();
-        // Fast path: identifier → ADS lookup
-        if (identifier) {
-          try {
-            const paper = lookupPaperByIdentifier(config, identifier);
-            if (paper && paper.title) {
-              paper.source = 'ads';
-              return paper;
-            }
-          } catch(err) { /* fall through */ }
-        }
-        // Slow path: Gemini extract via VM
-        try {
-          const resolved = resolveConfig(config);
-          const resp = UrlFetchApp.fetch(
-            resolved.baseUrl + '/api/papers/extract-metadata',
-            {
-              method:      'post',
-              contentType: 'application/json',
-              headers: {
-                'X-BibMan-Credential': resolved.credential,
-                'X-Gemini-Key':        resolved.geminiKey || '',
-              },
-              payload:            JSON.stringify({ url: data.url }),
-              muteHttpExceptions: true,
-              deadline:           55,
-            }
-          );
-          const meta   = JSON.parse(resp.getContentText());
-          const ident2 = (meta.doi || meta.arxiv_id || '').trim();
-          if (ident2 && !meta.error) {
-            try {
-              const adsPaper = lookupPaperByIdentifier(config, ident2);
-              if (adsPaper && adsPaper.title) {
-                adsPaper.source    = 'ads_via_gemini';
-                return adsPaper;
-              }
-            } catch(err) {}
-          }
-          return meta;
-        } catch(err) {
-          return { error: err.message };
-        }
-      }
+      if (data.action === 'extract_and_preview') return _captureExtract_(config, data);
       // ── upload_pdf: the server hands over a PDF to save in BibMan_PDFs/<library>/ (Core 10) ──
       if (data.action === 'upload_pdf') {
         try { return savePdfToDrive(config, data.pdf_base64, data.filename, data.library_name || ''); }
@@ -1428,41 +1402,7 @@ function captureDoPost(config, e) {
         } catch(err) { return { tags: [], error: err.message }; }
       }
       // ── save_captured ─────────────────────────────────────────────────────
-      if (data.action === 'save_captured') {
-        try {
-          const result = addPaperManual(config, {
-            bibkey:      (data.bibkey   || '').trim(),
-            title:       (data.title    || '').trim(),
-            authors:     (data.authors  || '').trim(),
-            year:        String(data.year || '').trim(),
-            journal:     normalizeJournalToMacro(data.journal || ''),
-            volume:      (data.volume   || '').trim(),
-            pages:       (data.pages    || '').trim(),
-            doi:         (data.doi      || '').trim(),
-            arxiv_id:    (data.arxiv_id || '').trim(),
-            bibcode:     (data.bibcode  || '').trim(),
-            identifiers: data.identifiers || [],
-            pdf_url:     (!data.doi && !data.arxiv_id) ? (data.url || '') : '',
-            library:     (data.library  || '').trim(),
-            _username:   (data._username|| '').trim(),
-          });
-          if (result && result.duplicate) {
-            result.error = `Already in library as ${result.bibkey}`;
-          }
-          // Tags picked in the bookmarklet (Core 11): applied as the person whose bookmarklet it is
-          const who = (data._username || '').trim(), tagIds = Array.isArray(data.tag_ids) ? data.tag_ids.slice(0, 50) : [];
-          if (result && !result.duplicate && result.paper_id && who && tagIds.length) {
-            result.tagged = 0; result.tag_errors = [];
-            tagIds.forEach(function(id) {
-              try { apiCall(config, 'POST', '/api/papers/' + encodeURIComponent(result.paper_id) + '/tags', { label_id: String(id), _username: who }); result.tagged++; }
-              catch(e) { result.tag_errors.push(e.message); }
-            });
-          }
-          return result;
-        } catch(err) {
-          return { error: err.message };
-        }
-      }
+      if (data.action === 'save_captured') return _captureSave_(config, data, (data._username || '').trim(), (data.library || '').trim(), null);
       return { error: 'unknown action' };
     } catch(err) {
       return { error: err.message };
@@ -1485,6 +1425,222 @@ function captureDoPost(config, e) {
   }
   return ContentService.createTextOutput(JSON.stringify(responseObj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function _captureExtract_(config, data) {
+  const identifier = (data.identifier || '').trim();
+  // Fast path: identifier → ADS lookup
+  if (identifier) {
+    try {
+      const paper = lookupPaperByIdentifier(config, identifier);
+      if (paper && paper.title) {
+        paper.source = 'ads';
+        return paper;
+      }
+    } catch(err) { /* fall through */ }
+  }
+  // Slow path: Gemini extract via VM
+  try {
+    const resolved = resolveConfig(config);
+    const resp = UrlFetchApp.fetch(
+      resolved.baseUrl + '/api/papers/extract-metadata',
+      {
+        method:      'post',
+        contentType: 'application/json',
+        headers: {
+          'X-BibMan-Credential': resolved.credential,
+          'X-Gemini-Key':        resolved.geminiKey || '',
+        },
+        payload:            JSON.stringify({ url: data.url }),
+        muteHttpExceptions: true,
+        deadline:           55,
+      }
+    );
+    const meta   = JSON.parse(resp.getContentText());
+    const ident2 = (meta.doi || meta.arxiv_id || '').trim();
+    if (ident2 && !meta.error) {
+      try {
+        const adsPaper = lookupPaperByIdentifier(config, ident2);
+        if (adsPaper && adsPaper.title) {
+          adsPaper.source    = 'ads_via_gemini';
+          return adsPaper;
+        }
+      } catch(err) {}
+    }
+    return meta;
+  } catch(err) {
+    return { error: err.message };
+  }
+}
+
+// Saves a paper from the bookmarklet into a library, recorded as `who`, and applies the picked tags (Core 11) as `who`.
+// allowedTagIds (guests, Core 12): only these tags may be applied; null = any the server lets this person use.
+function _captureSave_(config, data, who, library, allowedTagIds) {
+  try {
+    const result = addPaperManual(config, {
+      bibkey:      (data.bibkey   || '').trim(),
+      title:       (data.title    || '').trim(),
+      authors:     (data.authors  || '').trim(),
+      year:        String(data.year || '').trim(),
+      journal:     normalizeJournalToMacro(data.journal || ''),
+      volume:      (data.volume   || '').trim(),
+      pages:       (data.pages    || '').trim(),
+      doi:         (data.doi      || '').trim(),
+      arxiv_id:    (data.arxiv_id || '').trim(),
+      bibcode:     (data.bibcode  || '').trim(),
+      identifiers: data.identifiers || [],
+      pdf_url:     (!data.doi && !data.arxiv_id) ? (data.url || '') : '',
+      library:     library,
+      _username:   who,
+    });
+    if (result && result.duplicate) {
+      result.error = `Already in library as ${result.bibkey}`;
+    }
+    let tagIds = Array.isArray(data.tag_ids) ? data.tag_ids.slice(0, 50).map(String) : [];
+    if (allowedTagIds) tagIds = tagIds.filter(function(id) { return allowedTagIds.indexOf(id) > -1; });
+    if (result && !result.duplicate && result.paper_id && who && tagIds.length) {
+      result.tagged = 0; result.tag_errors = [];
+      tagIds.forEach(function(id) {
+        try { apiCall(config, 'POST', '/api/papers/' + encodeURIComponent(result.paper_id) + '/tags', { label_id: id, _username: who }); result.tagged++; }
+        catch(e) { result.tag_errors.push(e.message); }
+      });
+    }
+    return result;
+  } catch(err) {
+    return { error: err.message };
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ── 14b. GUEST BOOKMARKLETS (Core 12) ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// One shared key per paper/proposal project, for outside guests (the server keeps the keys: see "Guest bookmarklets"
+// in bibman_e2micro_server.py). Admins and core members create them in the dashboard and send the guests the install
+// link: the bookmarklet web app's address + ?guest=KEY, which shows a page with the button to drag (captureGuestPage).
+// A guest bookmarklet carries only its key, never GAS_CREDENTIAL. On every click the key is checked with the server,
+// and it can only read a paper's details, list the shared tags already used in its library, and add papers to that
+// library, recorded as guest-<project>; the library and the name come from the key, never from the bookmarklet.
+function _requireGuestManager_(config) {
+  const email = (Session.getActiveUser().getEmail() || '').trim();
+  if (!_isCoreMember_(config, email)) throw new Error('Only admins and core members can manage guest bookmarklets.');
+}
+function _guestLink_(config, key) { return config.captureUrl ? config.captureUrl + '?guest=' + encodeURIComponent(key) : ''; }
+function _withGuestLink_(config, k) { if (k) k.link = _guestLink_(config, k.key); return k; }
+
+function listGuestKeys(config) {
+  _requireGuestManager_(config);
+  const r = apiCall(config, 'GET', '/api/guest-keys');
+  (r.keys || []).forEach(function(k) { _withGuestLink_(config, k); });
+  r.captureUrlMissing = !config.captureUrl;
+  return r;
+}
+function createGuestKey(config, project, library, endsOn) {
+  _requireGuestManager_(config);
+  const r = apiCall(config, 'POST', '/api/guest-keys', { project: project, library: library, ends_on: endsOn });
+  _withGuestLink_(config, r.key);
+  return r;
+}
+function setGuestKeyEndDate(config, id, endsOn) {
+  _requireGuestManager_(config);
+  const r = apiCall(config, 'POST', '/api/guest-keys/' + encodeURIComponent(id) + '/ends-on', { ends_on: endsOn });
+  _withGuestLink_(config, r.key);
+  return r;
+}
+function endGuestKeyNow(config, id) {
+  _requireGuestManager_(config);
+  const r = apiCall(config, 'POST', '/api/guest-keys/' + encodeURIComponent(id) + '/end-now', {});
+  _withGuestLink_(config, r.key);
+  return r;
+}
+
+// What the server says about a guest key: { ok, project, guest_name, library, ends_on, created_by, … } or a refusal.
+function _guestCheck_(config, key) {
+  return apiCall(config, 'GET', '/api/guest-keys/check', null, { key: String(key || '').trim() });
+}
+function _guestRefusal_(c) {
+  const who = c.created_by ? c.created_by : 'whoever gave it to you';
+  if (c.reason === 'past_date') return 'This guest bookmarklet for ' + c.project + ' ended on ' + c.ends_on + '. Ask ' + who + ' for a new one.';
+  if (c.reason === 'ended')     return 'This guest bookmarklet for ' + c.project + ' has been ended. Ask ' + who + ' for a new one.';
+  if (c.reason === 'no_library') return 'The library this guest bookmarklet for ' + c.project + ' adds to no longer exists. Ask ' + who + ' for a new one.';
+  return 'BibMan does not know this guest bookmarklet. Ask whoever gave it to you for a new one.';
+}
+// The shared tags already used in the guest key's library (guests never see private ones).
+function _guestTags_(config, c) {
+  const labels = apiCall(config, 'GET', '/api/tags/labels', null, { library: c.library, _u: c.guest_name });
+  return (Array.isArray(labels) ? labels : []).filter(function(l) { return !l.is_private; })
+    .map(function(l) { return { id: l.id, label: l.label, color: l.color }; });
+}
+
+// captureDoPost for a guest bookmarklet: the key decides the library and the name; anything else is refused.
+function _guestCapture_(config, data) {
+  let c;
+  try { c = _guestCheck_(config, data.guest_key); } catch(err) { return { error: 'BibMan could not be reached: ' + err.message }; }
+  if (!c || !c.ok) return { error: _guestRefusal_(c || {}) };
+  if (data.action === 'guest_info') return { guest: true, project: c.project, library: c.library, ends_on: c.ends_on };
+  if (data.action === 'extract_and_preview') return _captureExtract_(config, data);
+  if (data.action === 'list_tags') {
+    try { return { tags: _guestTags_(config, c) }; } catch(err) { return { tags: [], error: err.message }; }
+  }
+  if (data.action === 'save_captured') {
+    let allowed = [];
+    try { allowed = _guestTags_(config, c).map(function(t) { return String(t.id); }); } catch(err) {}
+    const result = _captureSave_(config, data, c.guest_name, c.library, allowed);
+    if (result && !result.duplicate && !result.error && result.paper_id) {
+      try { apiCall(config, 'POST', '/api/guest-keys/' + encodeURIComponent(c.id) + '/added', {}); } catch(err) {}
+    }
+    return result;
+  }
+  return { error: 'A guest bookmarklet can only add papers.' };
+}
+
+/**
+ * captureGuestPage: the HTML of the bookmarklet web app's page (Core 12; its thin client's doGet serves it, as the
+ * dashboard's does). With ?guest=KEY it is a guest's install page: the project, library and end date, and the button
+ * to drag to the bookmarks bar. Without, a short note.
+ */
+function captureGuestPage(config, params) {
+  const esc = t => String(t == null ? '' : t).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const key = String((params && params.guest) || '').trim();
+  let inner;
+  if (!key) {
+    inner = '<p>This is BibMan’s bookmarklet web app. There is nothing to see here: BibMan’s bookmarklets send their papers to it.</p>';
+  } else {
+    let c = null, failed = '';
+    try { c = _guestCheck_(config, key); } catch(err) { failed = err.message; }
+    if (failed) {
+      inner = '<p class="bad">BibMan could not be reached just now (' + esc(failed) + '). Please try again in a few minutes.</p>';
+    } else if (!c || !c.ok) {
+      inner = '<p class="bad">' + esc(_guestRefusal_(c || {})) + '</p>';
+    } else {
+      const code = _bookmarkletCode_(config.captureUrl || ScriptApp.getService().getUrl(), { guestKey: key });
+      if (code.indexOf('javascript:(') !== 0 && code.indexOf('javascript:%28') !== 0) {
+        return '<!doctype html><html><head><meta charset="utf-8"><title>BibMan guest bookmarklet</title></head>' +
+          '<body style="background:#0f0f11;color:#f7c97e;font-family:monospace;font-size:14px;max-width:640px;margin:32px auto;padding:0 16px">' +
+          '<p>The guest bookmarklet could not be prepared just now. Please reload this page in a few minutes.</p></body></html>';
+      }
+      inner =
+        '<p>You have been given a <b>BibMan guest bookmarklet</b> for the project <b>' + esc(c.project) + '</b>. ' +
+        'It adds papers to the BibMan library <b>' + esc(c.library) + '</b>, until <b>' + esc(c.ends_on) + '</b>.</p>' +
+        '<ol><li>Show your browser’s bookmarks bar if it is hidden (Ctrl+Shift+B, or ⌘+Shift+B on a Mac).</li>' +
+        '<li>Drag this button to the bookmarks bar: <a id="bm" class="bm" style="display:none" title="Drag me to your bookmarks bar">' +
+        '+ BibMan (' + esc(c.project) + ')</a><span id="wait">preparing…</span></li>' +
+        '<li>On a paper’s page (an arXiv, ADS or journal abstract page), click the bookmark, check the details, ' +
+        'and click Add to BibMan. You can also pick shared tags.</li></ol>' +
+        '<p class="small">Anyone with this page or the bookmark can add papers to that library, so please don’t pass ' +
+        'it on. It stops working by itself after the end date.</p>' +
+        // The code is percent-encoded (no plain web addresses in the page's script), set once the page is shown,
+        // so the button can't be dragged before it is ready
+        '<script>(function(){var a=document.getElementById("bm");a.href=' + JSON.stringify(code) + ';' +
+        'a.onclick=function(ev){ev.preventDefault();};a.style.display="inline-block";' +
+        'document.getElementById("wait").style.display="none";})();</script>';
+    }
+  }
+  return '<!doctype html><html><head><meta charset="utf-8"><title>BibMan guest bookmarklet</title><style>' +
+    'body{background:#0f0f11;color:#e8e8f0;font-family:monospace;font-size:14px;line-height:1.6;max-width:640px;margin:32px auto;padding:0 16px}' +
+    'h3{color:#7eb8f7;font-size:13px;letter-spacing:.12em;text-transform:uppercase}' +
+    '.bm{background:#7eb8f7;color:#000;padding:4px 12px;border-radius:4px;font-weight:600;text-decoration:none;cursor:grab}' +
+    '.bad{color:#f7c97e}.small{color:#888;font-size:12px}li{margin-bottom:8px}</style></head><body>' +
+    '<h3>BibMan guest bookmarklet</h3>' + inner + '</body></html>';
 }
 
 /**
