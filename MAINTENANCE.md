@@ -75,6 +75,8 @@ Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default.
 - Labels are not tied to a library: a label shows in every library.
 - Labels that existed before the change became shared (the `is_private` column is added at server start, defaulting to 0).
 
+**Tags in gooTeX's Refs tab** (since 11 Nov 2026): gooTeX asks for the library's BibTeX with `&tags=1` (`/api/export/bib-text?library=NAME&tags=1`), and BibMan then puts each paper's tags in its `keywords` field, which gooTeX searches with `tag:`. Only **shared** labels go out, never private ones, applied by anyone (guests included) on the paper or on any of its notes, each name once. The `keywords` field is **replaced**: a stored BibTeX's own keywords (e.g. ADS's) are left out, also for papers without tags, so `tag:` finds only BibMan tags. Braces are left out of tag names in the export only. Without `&tags=1`, as in the dashboard's *Export .bib to Drive*, the export is unchanged and has no tags, so a `.bib` file that goes elsewhere never carries them. The compile-time export (`/api/export/bib`) is not affected.
+
 ## Gemini billing (Prepay)
 
 Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). Venn Search then falls back to keyword-only results and (since 28 October 2026) shows a red warning saying why, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.

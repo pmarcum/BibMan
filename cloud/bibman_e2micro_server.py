@@ -1895,8 +1895,11 @@ def get_bib():
     Internal loopback for GooTeX. Returns raw BibTeX for a library.
     Called as: GET http://localhost:8081/get_bib?library=Extragalactic
     No authentication — localhost only (nginx must not expose this externally).
+    With &tags=1 (gooTeX's Refs tab, since 11 Nov 2026) each entry's keywords field is replaced by the paper's
+    BibMan tags; without it (the dashboard's Export .bib to Drive) the output is as before, with no tags.
     """
     library_name_req = request.args.get('library', '').strip()
+    with_tags        = request.args.get('tags', '') == '1'
     conn = get_db_connection()
 
     if library_name_req:
@@ -1917,10 +1920,11 @@ def get_bib():
         return Response('% No library found\n', mimetype='text/plain')
 
     rows = conn.execute('''
-        SELECT bibkey, bibtex, title, authors, year, journal,
+        SELECT id, bibkey, bibtex, title, authors, year, journal,
                volume, pages, pubtype, doi, bibcode
         FROM papers WHERE library_id=? ORDER BY bibkey
     ''', (library_id,)).fetchall()
+    tags = _export_tags(conn, library_id) if with_tags else {}
     conn.close()
 
     lines = [
@@ -1935,6 +1939,8 @@ def get_bib():
             fixed = re.sub(r'@\w+\{[^,]+,',
                            f'@{pubtype}{{{bibkey},',
                            row['bibtex'].strip(), count=1, flags=re.IGNORECASE)
+            if with_tags:
+                fixed = _bib_set_keywords(fixed, tags.get(row['id']))
             lines.append(fixed)
         else:
             entry = [f'@{pubtype}{{{bibkey},']
@@ -1947,11 +1953,68 @@ def get_bib():
             if row['doi']:     entry.append(f'  doi     = {{{row["doi"]}}},')
             if row['bibcode']: entry.append(
                 f'  adsurl  = {{https://ui.adsabs.harvard.edu/abs/{row["bibcode"]}}},')
+            if with_tags and tags.get(row['id']):
+                entry.append(f'  keywords = {{{tags[row["id"]]}}},')
             entry.append('}')
             lines.append('\n'.join(entry))
         lines.append('')
 
     return Response('\n'.join(lines), mimetype='text/plain; charset=utf-8')
+
+
+# ── BibMan tags in the exported BibTeX (gooTeX's Refs tab, 11 Nov 2026) ──────────────────────────────────────────
+# gooTeX asks for them with &tags=1 and searches them with tag:. Only shared labels, never private ones, applied by
+# anyone (guests included), on the paper itself or on any of its notes; each name once, sorted. The keywords field is
+# REPLACED by them: a stored BibTeX's own keywords (e.g. ADS's) are dropped, also when the paper has no tags, so tag:
+# finds only BibMan tags. Braces are left out of tag names in the export only (a stray } would end the field).
+def _export_tags(conn, library_id):
+    """{paper id: 'AGN, dust, TCAN26'} for the library's papers that carry shared labels."""
+    rows = conn.execute('''SELECT DISTINCT pt.paper_id, l.label FROM paper_tags pt
+                            JOIN user_tag_labels l ON l.id = pt.label_id
+                            JOIN papers p ON p.id = pt.paper_id
+                           WHERE p.library_id = ? AND IFNULL(l.is_private, 0) = 0''', (library_id,)).fetchall()
+    by_paper = {}
+    for r in rows:
+        name = re.sub(r'[{}]', '', r['label'] or '').strip()
+        if name and name.lower() not in (n.lower() for n in by_paper.setdefault(r['paper_id'], [])):
+            by_paper[r['paper_id']].append(name)
+    return {pid: ', '.join(sorted(names, key=str.lower)) for pid, names in by_paper.items()}
+
+def _bib_value_end(text, i):
+    """Index just past a BibTeX field value starting at text[i] ({...}, "..." or a bare word/number)."""
+    n = len(text)
+    if i < n and text[i] == '{':
+        depth = 0
+        for j in range(i, n):
+            if text[j] == '{': depth += 1
+            elif text[j] == '}':
+                depth -= 1
+                if depth == 0: return j + 1
+        return n
+    if i < n and text[i] == '"':
+        depth = 0
+        for j in range(i + 1, n):
+            if text[j] == '{': depth += 1
+            elif text[j] == '}': depth -= 1
+            elif text[j] == '"' and depth == 0: return j + 1
+        return n
+    m = re.compile(r'[^,}\s]*').match(text, i)
+    return m.end()
+
+def _bib_set_keywords(entry, tags):
+    """The entry with every keywords field removed and, if there are tags, keywords = {tags} put after its key line."""
+    pat = re.compile(r'(?<=[,{\n])(\s*)keywords\s*=\s*', re.IGNORECASE)
+    while True:
+        m = pat.search(entry)
+        if not m: break
+        end = _bib_value_end(entry, m.end())
+        tail = re.compile(r'\s*,?').match(entry, end).end()   # the comma after the value, if any
+        entry = entry[:m.start()] + entry[tail:]
+    if tags:
+        head = re.match(r'@\w+\{[^,]*,', entry)
+        if head:
+            entry = entry[:head.end()] + f'\n  keywords = {{{tags}}},' + entry[head.end():]
+    return entry
 
 # ── Export bib (GAS-authenticated) ───────────────────────────────────────────
 @app.route('/api/export/bib-text')

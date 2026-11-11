@@ -1,5 +1,9 @@
 # Changelog
 
+## 11 November 2026: tags for gooTeX's Refs tab (server only)
+
+- **gooTeX can search references by their BibMan tags.** When gooTeX asks for a library's BibTeX with `&tags=1`, each entry's `keywords` field holds the paper's shared tags (from anyone, guests included, on the paper or its notes; never private ones), replacing any keywords in the stored BibTeX. The dashboard's *Export .bib to Drive* doesn't ask for them, so its `.bib` files are unchanged and carry no tags. Server only; tests in `cloud/tests/test_export_tags.py`. gooTeX needs `&tags=1` added to its library request.
+
 ## 9 November 2026: taking off a guest's tag (Core 13)
 
 - **Admins and core members can take off tags a guest put on a paper.** Guests have no dashboard, so until now nobody could remove their tags except by deleting the paper. The paper's tag box now lists them under *Tagged by guests*, with **✕ take off** next to each. Only tags applied with a guest bookmarklet are listed; colleagues' tags can still only be removed by whoever applied them.
