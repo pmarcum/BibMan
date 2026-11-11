@@ -8,7 +8,7 @@ For whoever hosts a BibMan instance. Setup is in [DEPLOY.md](DEPLOY.md). This pa
 |---|---|
 | `/home/bibman/bibman/` | Server code (`bibman_e2micro_server.py`, `bibman_cron.py`, `bibman_rebuild_usearch.py`) and its `venv/` |
 | `/home/bibman/bibman.db` | The SQLite database: every library, paper, passage, annotation, tag, and the 3072-dim Gemini embeddings (`vec_passages`, `vec_annotations`). **This is the data. It is not in git.** |
-| `/home/bibman/bibman_768_i8.lib-<library id>.usearch` | Semantic-search indexes, one per library, loaded when the service starts and listed in `bibman_768_i8.libraries.json`. Can always be rebuilt from the database. (`bibman_768_i8.usearch`, the shared index used before 31 Oct 2026, is no longer read and can be deleted.) |
+| `/home/bibman/bibman_768_i8.lib-<library id>.usearch` | Semantic-search indexes, one per library, loaded when the service starts and listed in `bibman_768_i8.libraries.json`. Can always be rebuilt from the database. (`bibman_768_i8.usearch`, the shared index used before 31 Oct 2026, is no longer read; it was deleted on 10 Nov 2026, with its two small companion files `bibman_768.usearch.timestamp` and `bibman_768_i8.usearch.method`.) |
 | `/home/bibman/bibman_config.json` | Small runtime settings the server writes itself (current library, last-seen Apps Script URL). |
 | `/etc/systemd/system/bibman.service` | Service definition, including `SESSION_SECRET` and `GAS_CREDENTIAL`. |
 | `/etc/systemd/system/bibman.service.d/export-credential.conf` | Optional: the read-only `EXPORT_CREDENTIAL` for gooTeX. |
@@ -69,7 +69,7 @@ Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default.
 - **A private label** (`is_private = 1`, 🔒) is seen and applied only by its creator, in every view including Everyone. Notes tagged with it stay visible to others as usual; only the tag is hidden. Private means hidden in BibMan's screens: a server administrator can still read it in the database.
 - New labels are shared unless *Private (only you)* is ticked. The creator can switch a label later (👥 / 🔒 in the Tags list in the left sidebar). Making it private is refused if others have used it.
 - Only the creator can rename or delete a label, in the Tags list in the left sidebar (the tag pickers only add and remove tags). Deleting asks for the label's name to be typed, and is refused if others have used it (the message names who, and on how many papers).
-- Each person can put a label once on a paper as a whole and once on each of its notes (unique index `ux_paper_tags_place`). Databases made before 2 November 2026 allowed it only once per paper, paper and notes together, and silently ignored further uses; `cloud/bibman_fix_tags.py` (dry run by default, `--apply`) changes the rule, and the server does the same at start if it finds the old one. Either keeps the old table as `paper_tags_old_rule_<date>`: drop it a week or so later, once all is well (`DROP TABLE paper_tags_old_rule_...;`).
+- Each person can put a label once on a paper as a whole and once on each of its notes (unique index `ux_paper_tags_place`). Databases made before 2 November 2026 allowed it only once per paper, paper and notes together, and silently ignored further uses; `cloud/bibman_fix_tags.py` (dry run by default, `--apply`) changes the rule, and the server does the same at start if it finds the old one. Either keeps the old table as `paper_tags_old_rule_<date>`: drop it a week or so later, once all is well (`DROP TABLE paper_tags_old_rule_...;`). On this server it was dropped on 10 Nov 2026.
 - Deleting a note removes its tags and @mentions; deleting a paper, those of the paper and its notes.
 - At most 8 labels per person (shared and private together). A new or renamed label may not have the same name, ignoring capitals, as a label you can already see. A colleague can still create a shared label with the same name as your private one, since they can't see it.
 - Labels are not tied to a library: a label shows in every library.
@@ -111,7 +111,7 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 
 **Rebuilding.** For a large library, do this when nobody is using BibMan **or gooTeX**. Libraries are built one at a time (small ones first, in seconds), so peak memory is set by the largest: about 420 MB for a 390,000-passage library. `nice` lowers its CPU priority but not its memory use. A small library alone (`--library Satellites`) takes seconds and can be rebuilt any time.
 
-1. **Back up first:** take a snapshot of the VM's disk (Compute Engine → Disks → the VM's disk → *Create snapshot*). It costs cents and covers everything, including the database.
+1. **Back up first:** take a snapshot of the VM's disk by hand (Compute Engine → Snapshots → *Create snapshot*; see [Backups](#backups)). It costs cents and covers everything, including the database.
 2. **Run the scripts:**
 ```
 cd /home/bibman/bibman
@@ -190,12 +190,28 @@ The dashboard banners cover the Core library and the Frontend web app (there is 
 
 ## Backups
 
-The database is the only thing that cannot be recreated, and it is large (several GB for a big library), so it is not in git. Two good options:
+The database is the only thing that cannot be recreated, and it is large (several GB for a big library), so it is not in git.
 
-- **Disk snapshots** (simplest on Google Cloud): Compute Engine → Snapshots → create a snapshot schedule for the VM's boot disk.
-- **An online copy** while the service runs: `sudo -u bibman sqlite3 /home/bibman/bibman.db ".backup /path/with/space/bibman-$(date +%F).db"`, then move the copy off the machine. Check free space first (`df -h`); the copy is as big as the database.
+**The VM is backed up by a weekly disk snapshot** (set up 10 Nov 2026). A snapshot copies the VM's whole disk: BibMan (database, search indexes, settings), gooTeX and WorPT, the web server's settings and certificates, the services' secret settings and the scheduled jobs. It does not include what lives outside the VM (Google Docs, the PDFs in Drive, the Apps Script projects, GitHub).
 
-To restore onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the backup at `DB_PATH`, rebuild the index, and start the service.
+| Setting | Value |
+|---|---|
+| Schedule | `weekly-vm-backup`, region `us-central1` (the disk's zone is `us-central1-f`) |
+| When | Sundays 10:00–11:00 UTC (2–3 am California time), before WorPT's 3:17 am backup and BibMan's 5 am nightly processing |
+| Kept | Each snapshot is deleted after **8 days**, once the next one exists, so normally there is one (two for about a day each week) |
+| Stored | Multi-regional, `us` |
+| If the disk is deleted | Its snapshots are kept |
+
+- **Check that the schedule is attached** (Cloud Shell, the >_ icon at the top right of the Console): `gcloud compute disks describe instance-20260407-062713 --zone=us-central1-f --format="value(resourcePolicies)"` prints a line ending in `weekly-vm-backup`. Creating a schedule does not attach it, and the Console's disk page may offer no *Edit* button, so attach it with `gcloud compute disks add-resource-policies instance-20260407-062713 --resource-policies=weekly-vm-backup --zone=us-central1-f`.
+- **A snapshot by hand** (before a risky change, or to close a gap): Compute Engine → Snapshots → *Create snapshot*; source disk `instance-20260407-062713`, type *Snapshot*, location *Multi-regional → us*. It takes a few minutes while everything keeps running. Snapshots made by hand are **not** deleted by the schedule: delete them yourself once a newer scheduled snapshot shows its green check mark.
+- **Deleting a snapshot is safe for the newer ones:** Google first moves into them whatever they still need. A new snapshot first shows only what changed since the previous one (e.g. 4.8 GB); once the older one is deleted it grows to the full size, which the Console can take an hour or so to show.
+- **To stop the schedule:** `gcloud compute disks remove-resource-policies instance-20260407-062713 --resource-policies=weekly-vm-backup --zone=us-central1-f`; to delete the schedule itself afterward, `gcloud compute resource-policies delete weekly-vm-backup --region=us-central1`. Snapshots already taken stay until you delete them (Compute Engine → Snapshots, tick, *Delete*). Keep at least one unless you really mean to have no backup.
+- **To restore:** Compute Engine → Snapshots → the snapshot → *Create instance* (a new VM from it), or *Create disk* and use it as the VM's boot disk (stop the VM first). A snapshot taken while BibMan runs is like a copy at a sudden power-off; SQLite recovers cleanly from that.
+- **WorPT** also copies its own database every night to `/home/bibman/worpt_backups/`, keeping the newest 14 (see WorPT's documentation).
+
+**An online copy of just the database**, while the service runs: `sudo -u bibman sqlite3 /home/bibman/bibman.db ".backup /path/with/space/bibman-$(date +%F).db"`, then move the copy off the machine. Check free space first (`df -h`); the copy is as big as the database.
+
+To restore only the database onto a fresh server: follow DEPLOY.md but skip `init_db.py`, put the backup at `DB_PATH`, rebuild the index, and start the service.
 
 ## Keeping secret files private
 
