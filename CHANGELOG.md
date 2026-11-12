@@ -1,5 +1,14 @@
 # Changelog
 
+## 12 November 2026: titles keep their LaTeX (Core 15)
+
+- **Titles of papers added from ADS now come from ADS's BibTeX export, LaTeX kept** (`colour-{\ensuremath{\sigma}}`, `10$^{11}$`). ADS's search service gives a plain-text title (`10^8 M_☉`, `z ~ 7`) that LaTeX misreads. ADS's lowered tilde (`\raisebox{-0.5ex}\textasciitilde`) is stored as `$\sim$`, `$\lesssim$`, `$\gtrsim$` or `$\simeq$`.
+- **The compile export writes symbols inside `$...$` math as LaTeX** (`M$_{☉}$`, `u$^{′}$`), and characters `pylatexenc` lacks (☉, ★, ─, ș) everywhere, so such titles compile.
+- **Titles keep their capitals in the exports BibTeX reads**: the compile export and Export .bib to Drive write `title = {{...}}`, as ADS does, so styles that lowercase titles leave them alone. The Refs-tab export is unchanged.
+- **Import .bib reads entries brace by brace**: ADS's own BibTeX (`title = "{...}"`, `year = 2011`, braces nested three deep) used to lose its title and year; imported keys now get the `+` for several authors.
+- **A repair for titles damaged by the March–April 2026 move** (which decoded their LaTeX: `\ensuremathσ`, `ødot`, `10$^11$`): `bibman_repair_accents.py titles` compares them with ADS's BibTeX titles, report first; see MAINTENANCE.md.
+- Core 15 and the repair script; both web apps select Core 15 and redeploy (dashboard 19, capture 15; their `Code.gs` is unchanged), and the server.
+
 ## 12 November 2026: accents (Core 14)
 
 - **Exports that BibTeX reads write accents as LaTeX.** The compile export gooTeX uses, and Export .bib to Drive, now write every non-ASCII character as braced LaTeX (`S{\'a}inz`), because classic BibTeX is not UTF-8-aware; a raw UTF-8 name could break a compile. Keys, address fields (DOI, URLs) and `$...$` math are left as they are. gooTeX's Refs tab still gets UTF-8, for display. Uses the `pylatexenc` package (new in `requirements.txt`).

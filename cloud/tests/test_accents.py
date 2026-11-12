@@ -16,10 +16,20 @@ def test_latex_ascii_entry(server):
     out = server.latex_ascii_entry(e)
     assert "Infante-S{\\'a}inz, Ra{\\'u}l and Y{\\i}ld{\\i}z" in out
     assert '{\\ensuremath{\\alpha}}' in out and '{\\textendash}' in out
-    assert '$α$' in out and 'doi = {10.1/ü}' in out                    # math and address fields untouched
+    assert '${\\ensuremath{\\alpha}}$' in out and 'doi = {10.1/ü}' in out   # symbols in math as LaTeX; addresses untouched
     assert out.startswith('@ARTICLE{k,') and out.endswith('}')
     assert server.latex_ascii_entry('@misc{a, title={plain}}') == '@misc{a, title={plain}}'
-    assert not re.search(r'[^\x00-\x7f]', out.replace('$α$', '').replace('10.1/ü', ''))
+    assert not re.search(r'[^\x00-\x7f]', out.replace('10.1/ü', ''))
+
+def test_symbols_pylatexenc_lacks(server):
+    """Characters found in the library that pylatexenc has no LaTeX for, and symbols inside $...$ (12 Nov 2026)."""
+    v = server._latex_value
+    assert v('M$_{☉}$ and M☉') == 'M$_{{\\ensuremath{\\odot}}}$ and M{\\ensuremath{\\odot}}'
+    assert v('u$^{′}$ and K′') == "u$^{{\\ensuremath{\\prime}}}$ and K{'}"
+    assert v('M★ Size─Stellar') == 'M{\\ensuremath{\\star}} Size{\\textendash}Stellar'
+    assert v('Coteș, Ștefan') == 'Cote{\\c{s}}, {\\c{S}}tefan'
+    assert v('$x é$') == '$x é$'                         # an accented letter is not math: left for the author to see
+    assert v('z $\\lesssim$ 2, 10$^{11}$') == 'z $\\lesssim$ 2, 10$^{11}$'      # ASCII math exactly as stored
 
 def _add(c, title, authors, lib='Extragalactic', **kw):
     return c.post('/api/papers/add-manual', json={'title': title, 'authors': authors, 'year': '2020', 'library': lib,
@@ -103,3 +113,68 @@ def test_repair_script(server, tmp_path, monkeypatch):
     assert get(tur) == 'Yıldız, Mustafa K.'
     R.undo(type('A', (), {'undo': str(undo)}))
     assert get(bad) == before
+
+def test_titles_pass(server, tmp_path, monkeypatch):
+    """Titles decoded by the migration are compared with ADS's BibTeX titles and repaired verbatim (12 Nov 2026)."""
+    c = server.app.test_client(); conn = server.get_db_connection(); db = os.environ['DB_PATH']
+    sys.path.insert(0, os.path.dirname(server.__file__)); import bibman_repair_accents as R
+    monkeypatch.setattr(R, 'DB_PATH', db)
+    ads_bern = (r'Curvature in the colour-magnitude relation but not in colour-{\ensuremath{\sigma}}: major dry mergers '
+                r'at M$_{*}$ {\ensuremath{>}} 2 {\texttimes} 10$^{11}$ M$_{\ensuremath{\odot}}$?')
+    papers = {   # bibkey: (stored title, created, bibcode, ADS's BibTeX title or None)
+        'bern2011':  ('Curvature in the colour-magnitude relation but not in colour-\\ensuremathσ: major dry mergers at '
+                      'M$_*$ > 2 × 10$^11$ M$_\\ensuremathødot$?', '2022-01-24', '2011MNRAS.412..684B', ads_bern),
+        'same2010':  (r'A {\it plain} $z\sim2$ title', '2020-01-01', '2010S', r'A {\it plain} $z\sim2$ title'),
+        'other2010': ('Völlig anders σ', '2020-01-01', '2010O', r'Something {\ensuremath{\sigma}} entirely unrelated here'),
+        'newok2026': ('Hα clean UTF-8 title', '2026-06-01', '2026N', r'H{\ensuremath{\alpha}} clean'),
+        'newbad2026': ('Black hole of 10^8 M_☉', '2026-06-01', '2026B', r'Black hole of 10$^{8}$ M$_{\ensuremath{\odot}}$'),
+        'lost2010':  ('Broken \\ensuremathσ title', '2020-01-01', '2010L', None),
+        'arxiv2010': ('Mergers at z \\ensuremath∼ 1', '2020-01-01', '2009arXiv0901.0001M', None),   # stored arXiv bibcode
+    }
+    ids = {}
+    for k, (t, created, bc, _) in papers.items():
+        ids[k] = _add(c, 'x' + k, 'A, B.', bibkey=k, bibcode=bc)['paper_id']
+        conn.execute('UPDATE papers SET title=?, created_at=? WHERE id=?', (t, created, ids[k])); conn.commit()
+    ads = {bc: t for (_, _, bc, t) in papers.values() if t}
+    ads['2010A&A...500..705M'] = r'Mergers at z {\textasciitilde} 1'                # ADS knows it by its journal bibcode
+    class Resp:
+        def __init__(self, d): self.status_code, self._d = 200, d
+        def raise_for_status(self): pass
+        def json(self): return self._d
+    class Session:
+        def post(self, url, json=None, headers=None, timeout=None):
+            return Resp({'export': '\n\n'.join(f'@ARTICLE{{{b},\n  author = {{X}},\n   title = "{{{ads[b]}}}",\n  year = 2010,\n}}'
+                                               for b in json['bibcode'] if b in ads)})
+        def get(self, url, params=None, headers=None, timeout=None):
+            docs = [{'bibcode': '2010A&A...500..705M'}] if params['q'] == 'identifier:"2009arXiv0901.0001M"' else []
+            return Resp({'response': {'docs': docs}})
+    import requests; monkeypatch.setattr(requests, 'Session', Session); monkeypatch.setattr(R.time, 'sleep', lambda s: None)
+    monkeypatch.setenv('ADS_TOKEN', 't'); out = tmp_path / 't'
+    R.titles(type('A', (), {'out': str(out)}))
+    plan = {p['bibkey']: p for p in json.load(open(out / 'titles-plan.json'))['papers']}
+    assert plan['bern2011']['category'] == 'title' and plan['bern2011']['title_after'] == ads_bern
+    assert 'same2010' not in plan and 'newok2026' not in plan                 # identical / clean and not migrated
+    assert plan['other2010']['category'] == 'title-check'                     # words differ: your decision
+    assert plan['newbad2026']['category'] == 'title'                          # unsafe for LaTeX, any paper
+    assert plan['lost2010']['category'] == 'notfound' and plan['lost2010']['title_after'] is None
+    assert plan['arxiv2010']['category'] == 'title' and plan['arxiv2010']['title_after'] == r'Mergers at z {\textasciitilde} 1'
+    assert 'ADS now lists it as 2010A&A...500..705M' in plan['arxiv2010']['notes']
+    R.apply(type('A', (), {'plan': str(out / 'titles-plan.json'), 'skip': '', 'include': '', 'fix': None}))
+    get = lambda k: conn.execute('SELECT title FROM papers WHERE id=?', (ids[k],)).fetchone()[0]
+    assert get('bern2011') == ads_bern and get('other2010') == 'Völlig anders σ' and get('lost2010').startswith('Broken')
+    # and it compiles: the export leaves the LaTeX as it is
+    ex = c.post('/api/export/bib', json={'bibkeys': ['bern2011']}, headers=H).get_json()['bibtex']
+    assert ads_bern in ex
+
+def test_titles_braced_for_bibtex(server):
+    """The exports BibTeX reads put a title in a second pair of braces so styles keep its capitals (12 Nov 2026);
+    the Refs-tab export (UTF-8, for display) is as before."""
+    c = server.app.test_client(); conn = server.get_db_connection()
+    c.post('/api/libraries', json={'name': 'Braces', '_username': 'pam'}, headers=H)
+    _add(c, r'The SAURON project at z $\sim$ 2', 'Doe, J.', lib='Braces', bibkey='doe2020sauron')
+    comp = c.post('/api/export/bib', json={'bibkeys': ['doe2020sauron']}, headers=H).get_json()['bibtex']
+    assert r'title   = {{The SAURON project at z $\sim$ 2}},' in comp
+    drive = c.get('/get_bib?library=Braces&latex=1').get_data(as_text=True)
+    assert r'title   = {{The SAURON project at z $\sim$ 2}},' in drive
+    refs = c.get('/get_bib?library=Braces&tags=1').get_data(as_text=True)
+    assert r'title   = {The SAURON project at z $\sim$ 2},' in refs

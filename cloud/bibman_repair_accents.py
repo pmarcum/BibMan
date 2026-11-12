@@ -17,6 +17,13 @@ list (and the title, where it is damaged too) from NASA ADS, as plain UTF-8, whi
                                               [--fix fixes.json]
      --fix gives corrected values where ADS's own are unusable, as {"bibkey": {"authors": "...", "title": "..."}}: they
      replace the plan's values for those papers (which are then repaired even if listed as "only a dotless i").
+  T. titles (12 Nov 2026): the same move decoded LaTeX in titles too ({\ensuremath{\sigma}} -> \ensuremathσ,
+     \odot -> ødot, 10$^{11}$ -> 10$^11$). "titles" compares candidate titles with the title in ADS's BibTeX export
+     (LaTeX, kept as ADS writes it, except that ADS's lowered tilde \raisebox{-0.5ex}\textasciitilde becomes
+     $\sim$, $\lesssim$, $\gtrsim$ or $\simeq$) and writes titles-report.html and titles-plan.json; "apply --plan .../titles-plan.json"
+     then works as above. Titles that differ from ADS's only in LaTeX or symbols are repaired; titles whose words
+     differ are changed only when named with --include; papers not found on ADS are only listed.
+       ADS_TOKEN=... python bibman_repair_accents.py titles --out /tmp/accent_repair
   3. undo, if ever needed: puts back exactly the values saved in an undo file.
        python bibman_repair_accents.py undo --undo /tmp/accent_repair/undo-<time>.json
 
@@ -51,8 +58,9 @@ def names_from_latex(s):
     return clean_text(LatexNodes2Text(math_mode='verbatim', strict_latex_spaces=True).latex_to_text(s).replace('\u00a0', ' '))
 
 def ads_lookup(session, token, bibcode, doi):
-    """ADS's record for a paper, by bibcode, else by DOI: {bibcode, author, title} or None."""
-    for q in ([f'bibcode:"{bibcode}"'] if bibcode else []) + ([f'doi:"{doi}"'] if doi else []):
+    """ADS's record for a paper, by bibcode (its own or an older one, such as the arXiv bibcode it had before it was
+    published), else by DOI: {bibcode, author, title} or None."""
+    for q in ([f'identifier:"{bibcode}"'] if bibcode else []) + ([f'doi:"{doi}"'] if doi else []):
         for attempt in range(3):
             r = session.get(ADS_URL, params={'q': q, 'fl': 'bibcode,author,title', 'rows': 1},
                             headers={'Authorization': f'Bearer {token}'}, timeout=20)
@@ -70,6 +78,182 @@ def ads_authors(names):
     names = [clean_text(n).strip() for n in names or [] if n and n.strip()]
     text = ' and '.join(names[:MAX_AUTHORS])
     return text + (' and et al.' if len(names) > MAX_AUTHORS else '')
+
+ADS_EXPORT_URL = 'https://api.adsabs.harvard.edu/v1/export/bibtex'
+MIGRATED_BEFORE = '2026-04-16'      # papers created before BibMan went live came through the March-April move
+TITLE_CANDIDATE = re.compile(r'[\\$^_~<>]|[^\x00-\x7f]')
+# Clearly broken or unsafe for LaTeX, in any paper: a command glued to what follows (\ensuremathσ), \odot read as
+# \o + dot, a backslash before a non-ASCII letter, ^ or _ followed by several characters without braces, HTML from
+# ADS's plain titles, and ^ _ ~ outside math
+TITLE_BROKEN = re.compile(r'\\ensuremath(?!\s*\{)|ødot|\\[^\x00-\x7f]|[\^_][^{\s$\\][^\s${}]|&lt;|&gt;|&amp;|</?(?:SUB|SUP|sub|sup)>')
+
+def _outside_math_unsafe(t):
+    return bool(re.search(r'[\^_~]', re.sub(r'(?<!\\)\$[^$]*\$', '', t)))
+
+def bibtex_field_value(entry, name):
+    """One field of a BibTeX entry, never decoded: outer "..." or {...} and one more pair spanning it all removed
+    (as Core's bibtexFieldValue)."""
+    m = re.search(r'(?:^|[,{\s])' + name + r'\s*=\s*', entry, re.I)
+    if not m:
+        return ''
+    i = m.end(); open_ = entry[i:i + 1]
+    if open_ in ('{', '"'):
+        depth, j = 0, i
+        while j < len(entry):
+            ch = entry[j]
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if open_ == '{' and depth == 0: break
+            elif ch == '"' and open_ == '"' and j > i and depth == 0: break
+            j += 1
+        value = entry[i + 1:j]
+    else:
+        value = re.match(r'[^,}\s]*', entry[i:]).group(0)
+    value = value.strip()
+    if value.startswith('{') and value.endswith('}'):
+        depth, spans = 0, True
+        for j, ch in enumerate(value):
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and j < len(value) - 1: spans = False; break
+        if spans: value = value[1:-1]
+    return re.sub(r'\s+', ' ', value).strip()
+
+_ADS_TILDE = r'\\raisebox\{-0\.5ex\}\\textasciitilde'
+
+def ads_title_symbols(t):
+    r"""ADS writes ∼ as \raisebox{-0.5ex}\textasciitilde (a lowered tilde) in many older titles; BibMan stores it as math
+    instead: <∼ → $\lesssim$, >∼ → $\gtrsim$, ∼= → $\simeq$, ∼ → $\sim$. Nothing else is changed (as Core's
+    adsTitleSymbols)."""
+    t = re.sub('<' + _ADS_TILDE, lambda m: r'$\lesssim$', t or '')
+    t = re.sub('>' + _ADS_TILDE, lambda m: r'$\gtrsim$', t)
+    t = re.sub(_ADS_TILDE + '=', lambda m: r'$\simeq$', t)
+    return re.sub(_ADS_TILDE, lambda m: r'$\sim$', t)
+
+def ads_latex_titles(session, token, bibcodes):
+    """{bibcode: title} from ADS's BibTeX export, 100 at a time."""
+    out = {}
+    for k in range(0, len(bibcodes), 100):
+        chunk = bibcodes[k:k + 100]
+        for attempt in range(3):
+            r = session.post(ADS_EXPORT_URL, json={'bibcode': chunk},
+                             headers={'Authorization': f'Bearer {token}'}, timeout=60)
+            if r.status_code == 429:
+                time.sleep(5 * (attempt + 1)); continue
+            r.raise_for_status(); break
+        for entry in re.split(r'\n(?=@)', '\n' + r.json().get('export', '')):
+            m = re.match(r'\s*@\w+\{([^,]+),', entry)
+            if m:
+                out[m.group(1).strip()] = ads_title_symbols(bibtex_field_value(entry, 'title'))
+        time.sleep(0.3)
+    return out
+
+def _words(t):
+    """A title's words for comparing: LaTeX and markup read as text, accents and case ignored."""
+    try:
+        from pylatexenc.latex2text import LatexNodes2Text
+        t = LatexNodes2Text(math_mode='text').latex_to_text(t)
+    except Exception:
+        pass
+    t = unicodedata.normalize('NFKD', html.unescape(t))
+    return re.sub(r'[^0-9a-z]+', ' ', ''.join(c for c in t if not unicodedata.combining(c)).lower()).strip()
+
+def titles(args):
+    token = os.environ.get('ADS_TOKEN', '').strip()
+    if not token:
+        sys.exit('Set ADS_TOKEN first (your NASA ADS API token).')
+    import requests, difflib
+    os.makedirs(args.out, exist_ok=True)
+    conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True); conn.row_factory = sqlite3.Row
+    rows = conn.execute('''SELECT p.id, p.bibkey, p.bibcode, p.doi, p.title, p.authors, p.created_at, l.name AS library
+                             FROM papers p LEFT JOIN libraries l ON l.id = p.library_id ORDER BY p.bibkey''').fetchall()
+    conn.close()
+    cands = []
+    for r in rows:
+        t = r['title'] or ''
+        if not TITLE_CANDIDATE.search(t):
+            continue
+        broken = bool(TITLE_BROKEN.search(t)) or _outside_math_unsafe(t)
+        migrated = (r['created_at'] or '') < MIGRATED_BEFORE
+        if broken or migrated:
+            cands.append((r, broken))
+    session = requests.Session()
+    print(f'{len(cands)} candidate titles; asking ADS ...')
+    # bibcodes for papers that only have a DOI
+    bib = {}
+    for r, _ in cands:
+        if r['bibcode']:
+            bib[r['id']] = r['bibcode']
+        elif r['doi']:
+            try:
+                d = ads_lookup(session, token, None, r['doi']); bib[r['id']] = (d or {}).get('bibcode', '')
+            except Exception:
+                bib[r['id']] = ''
+    found = ads_latex_titles(session, token, sorted({b for b in bib.values() if b}))
+    # a stored arXiv bibcode is only an older name once the paper is published: ADS exports it under the journal one
+    newer = {}
+    for b in sorted({b for b in bib.values() if b and b not in found}):
+        try:
+            d = ads_lookup(session, token, b, None)
+        except Exception:
+            d = None
+        if d and d.get('bibcode') and d['bibcode'] != b:
+            newer[b] = d['bibcode']
+    if newer:
+        more = ads_latex_titles(session, token, sorted(set(newer.values())))
+        found.update({old: more[b] for old, b in newer.items() if b in more})
+    plan = []
+    for r, broken in cands:
+        before = r['title'] or ''
+        ads_t = found.get(bib.get(r['id'], ''), '')
+        item = {'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'bibcode': bib.get(r['id'], ''),
+                'doi': r['doi'] or '', 'authors_before': r['authors'] or '', 'title_before': before,
+                'authors_after': None, 'title_after': None, 'notes': []}
+        if not ads_t:
+            item['category'] = 'notfound'
+            item['notes'].append('not found on ADS: left unchanged' + (' (title looks broken: needs your decision)' if broken else ''))
+            if broken: plan.append(item)
+            continue
+        if re.sub(r'\s+', ' ', ads_t).strip() == re.sub(r'\s+', ' ', before).strip():
+            continue                                               # already ADS's own LaTeX title
+        sim = difflib.SequenceMatcher(None, _words(before), _words(ads_t)).ratio()
+        item['title_after'] = ads_t
+        item['category'] = 'title' if sim >= 0.85 else 'title-check'
+        item['notes'].append(f'words {round(sim * 100)}% the same' + ('' if sim >= 0.85 else ': check it is the same paper'))
+        if broken: item['notes'].append('stored title is broken or unsafe for LaTeX')
+        if bib.get(r['id']) in newer: item['notes'].append(f"ADS now lists it as {newer[bib[r['id']]]}")
+        plan.append(item)
+    with open(os.path.join(args.out, 'titles-plan.json'), 'w', encoding='utf-8') as f:
+        json.dump({'made': datetime.now(timezone.utc).isoformat(), 'db': DB_PATH, 'papers': plan}, f, ensure_ascii=False, indent=1)
+    write_titles_html(plan, os.path.join(args.out, 'titles-report.html'))
+    n = lambda c: sum(1 for p in plan if p['category'] == c)
+    print(f"to repair: {n('title')}; words differ (your decision): {n('title-check')}; broken but not on ADS: {n('notfound')}")
+    print(f"written: {args.out}/titles-report.html and {args.out}/titles-plan.json (nothing in the database was changed)")
+
+def write_titles_html(plan, path):
+    esc = lambda s: html.escape(s or '')
+    def rows(items):
+        return '\n'.join(f"<tr><td><b>{esc(p['bibkey'])}</b><br><small>{esc(p['library'])}<br>{esc(p['bibcode'] or p['doi'])}</small></td>"
+                         f"<td class=b>{esc(p['title_before'])}</td><td class=a>{esc(p['title_after']) if p['title_after'] else '<i>unchanged</i>'}</td>"
+                         f"<td>{esc('; '.join(p['notes']))}</td></tr>" for p in items)
+    head = '<tr><th>Paper</th><th>Title now</th><th>ADS BibTeX title</th><th>Notes</th></tr>'
+    part = lambda c: [p for p in plan if p['category'] == c]
+    doc = f'''<!doctype html><meta charset="utf-8"><title>BibMan title repair report</title>
+<style>body{{font-family:sans-serif;font-size:13px;margin:16px}}table{{border-collapse:collapse;width:100%}}
+td,th{{border:1px solid #ccc;padding:4px 6px;vertical-align:top;text-align:left;font-family:monospace}}.b{{background:#fff3f3}}.a{{background:#f1fff1}}
+small{{color:#666}}</style>
+<h2>BibMan title repair: report only (nothing was changed)</h2>
+<p>Made {esc(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}. Titles are shown as stored (LaTeX as written); the new ones are ADS's BibTeX titles, with ADS's lowered tilde written as $\\sim$, $\\lesssim$, $\\gtrsim$ or $\\simeq$.</p>
+<h3>To repair: {len(part('title'))} titles (differ from ADS's only in LaTeX or symbols; changed by "apply", except those you name with --skip)</h3>
+<table>{head}{rows(part('title'))}</table>
+<h3>Words differ: {len(part('title-check'))} titles (changed only if you name them with --include)</h3>
+<table>{head}{rows(part('title-check'))}</table>
+<h3>Broken but not found on ADS: {len(part('notfound'))} titles (left unchanged; for your decision)</h3>
+<table>{head}{rows(part('notfound'))}</table>'''
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(doc)
 
 def report(args):
     token = os.environ.get('ADS_TOKEN', '').strip()
@@ -187,7 +371,7 @@ def apply(args):
         if p['bibkey'] in fixes:
             include.add(p['bibkey'])
     todo = [p for p in plan if (p['authors_after'] is not None or p['title_after'] is not None)
-            and p['bibkey'] not in skip and (p['category'] in ('damaged', 'latex') or p['bibkey'] in include)]
+            and p['bibkey'] not in skip and (p['category'] in ('damaged', 'latex', 'title') or p['bibkey'] in include)]
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     undo, changed, stale = [], 0, []
     for p in todo:
@@ -230,5 +414,6 @@ if __name__ == '__main__':
     b = sub.add_parser('apply');  b.add_argument('--plan', required=True); b.add_argument('--skip'); b.add_argument('--include')
     b.add_argument('--fix')
     c = sub.add_parser('undo');   c.add_argument('--undo', required=True)
+    d = sub.add_parser('titles'); d.add_argument('--out', default='/tmp/accent_repair')
     args = ap.parse_args()
-    {'report': report, 'apply': apply, 'undo': undo}[args.cmd](args)
+    {'report': report, 'apply': apply, 'undo': undo, 'titles': titles}[args.cmd](args)

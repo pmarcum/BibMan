@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 14;
+const BIBMAN_CORE_LIBRARY_VERSION = 15;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -666,7 +666,77 @@ function lookupPaperByIdentifier(config, identifier) {
   }
   const docs = JSON.parse(response.getContentText()).response?.docs || [];
   if (!docs.length) return null;
-  return _adsDocToPaper(docs[0]);
+  const paper = _adsDocToPaper(docs[0]);
+  // The title as ADS's BibTeX export writes it, LaTeX kept (Core 15; ADS's lowered tilde becomes $\sim$ etc., see
+  // adsTitleSymbols): ADS's search service gives a plain-text version (10^8 M_☉, z ~ 7, <~) that LaTeX misreads.
+  // If that request fails, the plain title stays.
+  const latexTitle = _adsLatexTitle(config, docs[0].bibcode);
+  if (latexTitle) paper.title = latexTitle;
+  return paper;
+}
+
+const ADS_EXPORT_URL = 'https://api.adsabs.harvard.edu/v1/export/bibtex';
+
+/** _adsLatexTitle: a paper's title from ADS's BibTeX export, without its outer quotes and braces; '' if unavailable. */
+function _adsLatexTitle(config, bibcode) {
+  if (!bibcode) return '';
+  try {
+    const r = UrlFetchApp.fetch(ADS_EXPORT_URL, {
+      method: 'post', contentType: 'application/json', payload: JSON.stringify({ bibcode: [bibcode] }),
+      headers: { 'Authorization': `Bearer ${config.adsToken}` }, muteHttpExceptions: true, deadline: 20,
+    });
+    if (r.getResponseCode() !== 200) return '';
+    return adsTitleSymbols(bibtexFieldValue(JSON.parse(r.getContentText()).export || '', 'title'));
+  } catch (e) {
+    console.log('BibManCore._adsLatexTitle: ' + e.message);
+    return '';
+  }
+}
+
+/**
+ * adsTitleSymbols: ADS writes ∼ as \raisebox{-0.5ex}\textasciitilde (a lowered tilde) in many older titles; BibMan
+ * stores it as math instead: <∼ → $\lesssim$, >∼ → $\gtrsim$, ∼= → $\simeq$, ∼ → $\sim$. Nothing else is changed.
+ */
+const ADS_TILDE = '\\\\raisebox\\{-0\\.5ex\\}\\\\textasciitilde';
+function adsTitleSymbols(t) {
+  return String(t || '')
+    .replace(new RegExp('<' + ADS_TILDE, 'g'), () => '$\\lesssim$')
+    .replace(new RegExp('>' + ADS_TILDE, 'g'), () => '$\\gtrsim$')
+    .replace(new RegExp(ADS_TILDE + '=', 'g'), () => '$\\simeq$')
+    .replace(new RegExp(ADS_TILDE, 'g'), () => '$\\sim$');
+}
+
+/**
+ * bibtexFieldValue: one field of a BibTeX entry, read brace by brace (never decoded): its outer "..." or {...} and
+ * one further pair of braces around the whole value (ADS writes title = "{...}") are removed, everything inside kept.
+ */
+function bibtexFieldValue(entry, name) {
+  const m = new RegExp('(?:^|[,{\\s])' + name + '\\s*=\\s*', 'i').exec(entry);
+  if (!m) return '';
+  let i = m.index + m[0].length, value = '';
+  const open = entry[i];
+  if (open === '{' || open === '"') {
+    let depth = 0, j = i;
+    for (; j < entry.length; j++) {
+      const ch = entry[j];
+      if (ch === '{') depth++;
+      else if (ch === '}') { depth--; if (open === '{' && depth === 0) break; }
+      else if (ch === '"' && open === '"' && j > i && depth === 0) break;
+    }
+    value = entry.slice(i + 1, j);
+  } else {
+    value = (/^[^,}\s]*/.exec(entry.slice(i)) || [''])[0];
+  }
+  value = value.trim();
+  if (value[0] === '{' && value[value.length - 1] === '}') {          // one more pair, only if it spans the whole value
+    let depth = 0, spans = true;
+    for (let j = 0; j < value.length; j++) {
+      if (value[j] === '{') depth++;
+      else if (value[j] === '}') { depth--; if (depth === 0 && j < value.length - 1) { spans = false; break; } }
+    }
+    if (spans) value = value.slice(1, -1);
+  }
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 /**

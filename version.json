@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 14,
-  "bibman_frontend_thinclient_webapp_version": 18,
-  "bibman_bookmarklet_capture_webapp_version": 14,
-  "bibman_core_library_notes": "v14: names and titles from ADS kept as plain UTF-8; Export .bib to Drive writes accents as LaTeX. In each web app: Libraries → BibManCore → select version 14, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v18: select Core 14 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v14: select Core 14 and redeploy (Code.gs unchanged)"
+  "bibman_core_library_version": 15,
+  "bibman_frontend_thinclient_webapp_version": 19,
+  "bibman_bookmarklet_capture_webapp_version": 15,
+  "bibman_core_library_notes": "v15: titles of papers added from ADS taken from ADS's BibTeX export (LaTeX kept; ADS's lowered tilde stored as $\\sim$ etc.). In each web app: Libraries → BibManCore → select version 15, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v19: select Core 15 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v15: select Core 15 and redeploy (Code.gs unchanged)"
 }

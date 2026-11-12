@@ -52,7 +52,7 @@ import requests
 from flask import Flask, jsonify, request, Response, session, has_request_context
 from flask_cors import CORS
 import unicodedata
-from pylatexenc.latexencode import UnicodeToLatexEncoder
+from pylatexenc.latexencode import UnicodeToLatexEncoder, UnicodeToLatexConversionRule, RULE_DICT
 from pylatexenc.latex2text import LatexNodes2Text
 
 # ── Astronomy text normalisation ──────────────────────────────────────────────
@@ -1949,7 +1949,7 @@ def get_bib():
         else:
             entry = [f'@{pubtype}{{{bibkey},']
             entry.append(f'  author  = {{{row["authors"] or "Unknown"}}},')
-            entry.append(f'  title   = {{{row["title"] or "Unknown"}}},')
+            entry.append(f'  title   = {_bib_title(row["title"] or "Unknown", as_latex)},')
             if row['year']:    entry.append(f'  year    = {{{row["year"]}}},')
             if row['journal']: entry.append(f'  journal = {{{row["journal"]}}},')
             if row['volume']:  entry.append(f'  volume  = {{{row["volume"]}}},')
@@ -2005,6 +2005,55 @@ def _bib_value_end(text, i):
     m = re.compile(r'[^,}\s]*').match(text, i)
     return m.end()
 
+def _bib_title(title, for_bibtex):
+    """A title as a BibTeX field value. For the exports BibTeX reads (for_bibtex), inside a second pair of braces, as ADS
+    writes them, so styles that change a title's capitals (M$_*$, SAURON, H II) leave it as it is (12 Nov 2026)."""
+    return '{{' + title + '}}' if for_bibtex else '{' + title + '}'
+
+def _bib_entries(text):
+    """(type, key, fields) for each entry of a .bib file, read brace by brace (12 Nov 2026), so values with braces
+    nested to any depth or with an @ in them are read whole; @string, @comment and @preamble are not papers."""
+    out = []
+    for m in re.finditer(r'@\s*(\w+)\s*\{', text):
+        if m.group(1).lower() in ('string', 'comment', 'preamble'):
+            continue
+        end = _bib_value_end(text, m.end() - 1)
+        body = text[m.end():end - 1]
+        key, comma, fields = body.partition(',')
+        if comma and key.strip():
+            out.append((m.group(1), key.strip(), fields))
+    return out
+
+def _bib_field_text(value):
+    """A field value without its outer {...} or "..." and one more pair of braces spanning it all (ADS writes
+    title = "{...}"), spaces collapsed; everything inside kept as written (as Core's bibtexFieldValue)."""
+    v = value.strip()
+    if len(v) >= 2 and (v[0], v[-1]) in (('{', '}'), ('"', '"')):
+        v = v[1:-1].strip()
+    if v.startswith('{') and v.endswith('}'):
+        depth = 0
+        for j, ch in enumerate(v):
+            if ch == '{': depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0 and j < len(v) - 1: break
+        else:
+            v = v[1:-1]
+    return re.sub(r'\s+', ' ', v).strip()
+
+def _bib_fields(fields_str):
+    """{name: value} for an entry's fields ({...}, "..." or a bare word or number such as year = 2011)."""
+    out, i = {}, 0
+    field = re.compile(r'[\s,]*([A-Za-z][\w:.\-]*)\s*=\s*')
+    while True:
+        m = field.match(fields_str, i)
+        if not m:
+            break
+        end = _bib_value_end(fields_str, m.end())
+        out[m.group(1).lower()] = _bib_field_text(fields_str[m.end():end])
+        i = max(end, m.end() + 1)
+    return out
+
 def _bib_set_keywords(entry, tags):
     """The entry with every keywords field removed and, if there are tags, keywords = {tags} put after its key line."""
     pat = re.compile(r'(?<=[,{\n])(\s*)keywords\s*=\s*', re.IGNORECASE)
@@ -2023,12 +2072,20 @@ def _bib_set_keywords(entry, tags):
 # ── Accents (12 Nov 2026) ────────────────────────────────────────────────────────────────────────────────────────
 # BibMan stores names and titles as plain UTF-8 ("Sáinz"). Exports that BibTeX reads (the compile export, and Export
 # .bib to Drive, which asks with &latex=1) write every non-ASCII character as braced LaTeX ("S{\'a}inz"), because
-# gooTeX's BibTeX is not UTF-8-aware; the Refs-tab export stays UTF-8 for display. Left as they are: the key line,
-# address-like fields (_RAW_FIELDS) and anything inside $...$ math. A character pylatexenc has no LaTeX for stays as is.
+# gooTeX's BibTeX is not UTF-8-aware; the Refs-tab export stays UTF-8 for display. Left as they are: the key line and
+# address-like fields (_RAW_FIELDS). Inside $...$ math only symbols are written as LaTeX (☉ → {\ensuremath{\odot}});
+# a character with no LaTeX known (to pylatexenc or _LATEX_EXTRA) stays as is.
 _DOTLESS_I_ACCENT = re.compile('\u0131([\u0300-\u036f])')
 _RAW_FIELDS = {'url', 'doi', 'adsurl', 'eprint', 'bibcode', 'file', 'pdf', 'archiveprefix', 'primaryclass'}
+# Characters found in the library (12 Nov 2026) that pylatexenc has no LaTeX for. ș (s with a comma below) is written
+# with a cedilla, \c{s}, as plain LaTeX has no comma-below accent; ─ (a box-drawing line, from ADS) is meant as a dash.
+_LATEX_EXTRA = {'☉': r'\ensuremath{\odot}', '★': r'\ensuremath{\star}', '─': r'\textendash',
+                'ș': r'\c{s}', 'Ș': r'\c{S}'}
 _LATEX_ENCODER = UnicodeToLatexEncoder(non_ascii_only=True, replacement_latex_protection='braces-all',
-                                       unknown_char_policy='keep')
+                                       unknown_char_policy='keep', conversion_rules=[
+                                           UnicodeToLatexConversionRule(rule_type=RULE_DICT, rule={
+                                               ord(c): v for c, v in _LATEX_EXTRA.items()}), 'defaults'])
+_MATH_EXTRA = {'′': r'{\ensuremath{\prime}}'}      # in text pylatexenc writes ′ as {'}, which is not a prime in math
 _LATEX_TO_TEXT = LatexNodes2Text(math_mode='verbatim', strict_latex_spaces=True)
 
 def clean_text(s):
@@ -2053,10 +2110,18 @@ _LOOSE_ACCENTS = {'\u0300': "{\\`{}}", '\u0301': "{\\'{}}", '\u0302': '{\\^{}}',
                   '\u0306': '{\\u{}}', '\u0307': '{\\.{}}', '\u0308': '{\\"{}}', '\u030a': '{\\r{}}', '\u030b': '{\\H{}}',
                   '\u030c': '{\\v{}}', '\u0327': '{\\c{}}', '\u0328': '{\\k{}}'}
 
+def _math_symbol(ch):
+    r"""A non-ASCII character inside $...$ math as LaTeX that works in math ({\ensuremath{...}}); otherwise as is."""
+    if ch in _MATH_EXTRA:
+        return _MATH_EXTRA[ch]
+    latex = _LATEX_ENCODER.unicode_to_latex(ch)
+    return latex if '\\ensuremath' in latex else ch
+
 def _latex_value(v):
-    """One field value with its non-ASCII characters as braced LaTeX, $...$ math left as it is."""
+    """One field value with its non-ASCII characters as braced LaTeX; inside $...$ math, its symbols only."""
     parts = re.split(r'(?<!\\)(\$[^$]*\$)', v)
-    return ''.join(p if len(p) > 1 and p.startswith('$') and p.endswith('$')
+    return ''.join(re.sub(r'[^\x00-\x7f]', lambda m: _math_symbol(m.group(0)), clean_text(p))
+                   if len(p) > 1 and p.startswith('$') and p.endswith('$')
                    else re.sub('[\u0300-\u036f]', lambda m: _LOOSE_ACCENTS.get(m.group(0), ''),
                                _LATEX_ENCODER.unicode_to_latex(clean_text(p))) for p in parts)
 
@@ -4237,23 +4302,17 @@ def import_bib_file():
         conn.close()
         return err('Library not found', 404)
 
-    # Simple bibtex parser
-    entries  = re.findall(
-        r'@(\w+)\{([^,]+),([^@]+)\}', bib_content, re.DOTALL
-    )
+    entries  = _bib_entries(bib_content)
     added    = 0
     skipped  = 0
 
     for pubtype, bibkey, fields_str in entries:
         bibkey = bibkey.strip()
-        fields = {}
-        for m in re.finditer(r'(\w+)\s*=\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}',
-                             fields_str, re.DOTALL):
-            fields[m.group(1).lower()] = m.group(2).strip()
+        fields = _bib_fields(fields_str)
 
-        # Reconstruct bibkey in BibMan format
+        # Reconstruct bibkey in BibMan format (BibTeX separates authors with "and", the key rule with ";")
         bibkey = _make_bibkey(
-            fields.get('author', ''),
+            re.sub(r'\s+and\s+', '; ', names_from_latex(fields.get('author', ''))),
             fields.get('year', ''),
             fields.get('journal', ''),
             fields.get('volume', ''),
@@ -4484,7 +4543,7 @@ def export_bib():
             bibkey  = r['bibkey']
             lines   = [f'@{pubtype}{{{bibkey},']
             if r['authors']: lines.append(f'  author  = {{{r["authors"]}}},')
-            if r['title']:   lines.append(f'  title   = {{{r["title"]}}},')
+            if r['title']:   lines.append(f'  title   = {_bib_title(r["title"], True)},')
             if r['year']:    lines.append(f'  year    = {{{r["year"]}}},')
             if r['journal']: lines.append(f'  journal = {{{r["journal"]}}},')
             if r['volume']:  lines.append(f'  volume  = {{{r["volume"]}}},')
