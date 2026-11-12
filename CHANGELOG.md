@@ -1,5 +1,13 @@
 # Changelog
 
+## 12 November 2026: accents (Core 14)
+
+- **Exports that BibTeX reads write accents as LaTeX.** The compile export gooTeX uses, and Export .bib to Drive, now write every non-ASCII character as braced LaTeX (`S{\'a}inz`), because classic BibTeX is not UTF-8-aware; a raw UTF-8 name could break a compile. Keys, address fields (DOI, URLs) and `$...$` math are left as they are. gooTeX's Refs tab still gets UTF-8, for display. Uses the `pylatexenc` package (new in `requirements.txt`).
+- **Names and titles are stored as plain UTF-8**, whichever way a paper is added or edited: names from ADS are no longer turned into LaTeX (Core 14), names written in LaTeX are converted, broken accent marks are repaired. Duplicate checks ignore accents.
+- **A repair for damaged author lists.** The move from the old spreadsheet (March–April 2026) mangled the accents in about 200 papers' author lists. `cloud/bibman_repair_accents.py` puts them back from ADS, after a report you review; see MAINTENANCE.md, "Accents in names and titles".
+- The bookmarklet web app's PDF functions (checkPdfLinks and others) no longer print each line twice in the editor's log.
+- Server, Core 14, the repair script, tests in `cloud/tests/test_accents.py`; both web apps select Core 14 and redeploy (dashboard 18, capture 14; their `Code.gs` is unchanged).
+
 ## 11 November 2026: tags for gooTeX's Refs tab (server only)
 
 - **gooTeX can search references by their BibMan tags.** When gooTeX asks for a library's BibTeX with `&tags=1`, each entry's `keywords` field holds the paper's shared tags (from anyone, guests included, on the paper or its notes; never private ones), replacing any keywords in the stored BibTeX. The dashboard's *Export .bib to Drive* doesn't ask for them, so its `.bib` files are unchanged and carry no tags. Server only; tests in `cloud/tests/test_export_tags.py`. gooTeX needs `&tags=1` added to its library request.

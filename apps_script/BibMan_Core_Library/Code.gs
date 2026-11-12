@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 13;
+const BIBMAN_CORE_LIBRARY_VERSION = 14;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -779,15 +779,17 @@ function _adsDocToPaper(doc) {
   return {
     bibkey:      bibkey,
     bibcode:     doc.bibcode  || '',
-    title:       unicodeToLatex(title),
-    authors:     unicodeToLatex(authors),
+    // Names and titles as ADS gives them, plain UTF-8 (Core 14): BibMan stores UTF-8 and writes LaTeX accents only
+    // in the exports BibTeX reads (the server does that)
+    title:       title,
+    authors:     authors,
     year:        String(doc.year || ''),
-    journal:     unicodeToLatex(journal),
+    journal:     journal,
     volume:      vol,
     pages:       pages,
     doi:         doi,
     abstract:    (doc.abstract || ''),
-    bibtex:      unicodeToLatex(doc.bibtex || ''),
+    bibtex:      doc.bibtex || '',
     pubtype:     pubtype,
     pdf_url:     arxivId ? `https://arxiv.org/pdf/${arxivId}` : '',
     identifiers: identifiers,
@@ -873,25 +875,6 @@ function normalizeJournalToMacro(journal) {
   return s;
 }
 
-function unicodeToLatex(s) {
-  if (!s) return s;
-  const map = {
-    'à': "\\`{a}", 'á': "\\'{a}", 'â': "\\^{a}", 'ã': "\\~{a}", 'ä': '\\"{a}', 'å': '{\\aa}',
-    'è': "\\`{e}", 'é': "\\'{e}", 'ê': "\\^{e}", 'ë': '\\"{e}',
-    'ì': "\\`{i}", 'í': "\\'{i}", 'î': "\\^{i}", 'ï': '\\"{i}',
-    'ò': "\\`{o}", 'ó': "\\'{o}", 'ô': "\\^{o}", 'õ': "\\~{o}", 'ö': '\\"{o}', 'ø': '{\\o}',
-    'ù': "\\`{u}", 'ú': "\\'{u}", 'û': "\\^{u}", 'ü': '\\"{u}',
-    'ý': "\\'{y}", 'ÿ': '\\"{y}',
-    'ñ': "\\~{n}", 'ç': "\\c{c}",
-    'À': "\\`{A}", 'Á': "\\'{A}", 'Â': "\\^{A}", 'Ã': "\\~{A}", 'Ä': '\\"{A}', 'Å': '{\\AA}',
-    'È': "\\`{E}", 'É': "\\'{E}", 'Ê': "\\^{E}", 'Ë': '\\"{E}',
-    'Ì': "\\`{I}", 'Í': "\\'{I}", 'Î': "\\^{I}", 'Ï': '\\"{I}',
-    'Ò': "\\`{O}", 'Ó': "\\'{O}", 'Ô': "\\^{O}", 'Õ': "\\~{O}", 'Ö': '\\"{O}', 'Ø': '{\\O}',
-    'Ù': "\\`{U}", 'Ú': "\\'{U}", 'Û': "\\^{U}", 'Ü': '\\"{U}',
-    'Ñ': "\\~{N}", 'Ç': "\\c{C}",
-  };
-  return s.replace(/[^\x00-\x7F]/g, c => map[c] || c);
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── 9. PDF DELIVERY ───────────────────────────────────────────────────────────
@@ -952,7 +935,8 @@ function exportBibTodrive(config, library) {
   const resolved = resolveConfig(config);
   const fileName = (library || 'library').toLowerCase().replace(/\s+/g, '_') + '.bib';
   // 1. Fetch bib content from VM
-  const url = `${resolved.baseUrl}/api/export/bib-text?library=${encodeURIComponent(library || '')}`;
+  // &latex=1 (Core 14): accents written as LaTeX (S{\'a}inz), so the file works with any BibTeX, journal or arXiv
+  const url = `${resolved.baseUrl}/api/export/bib-text?library=${encodeURIComponent(library || '')}&latex=1`;
   const response = UrlFetchApp.fetch(url, {
     method:  'get',
     headers: { 'X-BibMan-Credential': resolved.credential },
@@ -1048,7 +1032,7 @@ function resaveMissingPdfs(config, start) {
     text = r.started ? 'Re-save started: ' + r.papers + ' papers, about ' + r.minutes + ' minutes. Run resavePdfsCheck to see progress; ' +
                        'the report is written next to the database when it finishes.' : (r.message || r.error || JSON.stringify(r));
   }
-  Logger.log(text); console.log(text);
+  console.log(text);   // console.log alone: the editor's log showed Logger.log's copy too, so every line twice
   return r;
 }
 
@@ -1100,7 +1084,7 @@ function checkPdfLinks(config, apply) {
     if (failed.length) { lines.push('could not be changed (' + failed.length + '):'); failed.forEach(function(x) { lines.push('  ' + x); }); }
     if (notDone.length) lines.push('stopped after 5 minutes with ' + notDone.length + ' still to do: run fixPdfLinks again to carry on');
   }
-  const text = lines.join('\n'); Logger.log(text); console.log(text);
+  const text = lines.join('\n'); console.log(text);
   return { folders: folders.length, not_viewable: priv.length, changed: changed, failed: failed.length, remaining: notDone.length };
 }
 

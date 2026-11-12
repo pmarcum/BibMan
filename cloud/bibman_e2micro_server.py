@@ -51,6 +51,9 @@ import numpy as np
 import requests
 from flask import Flask, jsonify, request, Response, session, has_request_context
 from flask_cors import CORS
+import unicodedata
+from pylatexenc.latexencode import UnicodeToLatexEncoder
+from pylatexenc.latex2text import LatexNodes2Text
 
 # ── Astronomy text normalisation ──────────────────────────────────────────────
 try:
@@ -1900,6 +1903,7 @@ def get_bib():
     """
     library_name_req = request.args.get('library', '').strip()
     with_tags        = request.args.get('tags', '') == '1'
+    as_latex         = request.args.get('latex', '') == '1'   # Export .bib to Drive (Core 14): accents as LaTeX
     conn = get_db_connection()
 
     if library_name_req:
@@ -1928,7 +1932,7 @@ def get_bib():
     conn.close()
 
     lines = [
-        f'% BibMan export — {library_name}',
+        f'% BibMan export {"-" if as_latex else "—"} {library_name}',
         f'% Generated: {datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")}',
         f'% {len(rows)} entries', '',
     ]
@@ -1941,7 +1945,7 @@ def get_bib():
                            row['bibtex'].strip(), count=1, flags=re.IGNORECASE)
             if with_tags:
                 fixed = _bib_set_keywords(fixed, tags.get(row['id']))
-            lines.append(fixed)
+            lines.append(latex_ascii_entry(fixed) if as_latex else fixed)
         else:
             entry = [f'@{pubtype}{{{bibkey},']
             entry.append(f'  author  = {{{row["authors"] or "Unknown"}}},')
@@ -1956,7 +1960,7 @@ def get_bib():
             if with_tags and tags.get(row['id']):
                 entry.append(f'  keywords = {{{tags[row["id"]]}}},')
             entry.append('}')
-            lines.append('\n'.join(entry))
+            lines.append(latex_ascii_entry('\n'.join(entry)) if as_latex else '\n'.join(entry))
         lines.append('')
 
     return Response('\n'.join(lines), mimetype='text/plain; charset=utf-8')
@@ -2015,6 +2019,71 @@ def _bib_set_keywords(entry, tags):
         if head:
             entry = entry[:head.end()] + f'\n  keywords = {{{tags}}},' + entry[head.end():]
     return entry
+
+# ── Accents (12 Nov 2026) ────────────────────────────────────────────────────────────────────────────────────────
+# BibMan stores names and titles as plain UTF-8 ("Sáinz"). Exports that BibTeX reads (the compile export, and Export
+# .bib to Drive, which asks with &latex=1) write every non-ASCII character as braced LaTeX ("S{\'a}inz"), because
+# gooTeX's BibTeX is not UTF-8-aware; the Refs-tab export stays UTF-8 for display. Left as they are: the key line,
+# address-like fields (_RAW_FIELDS) and anything inside $...$ math. A character pylatexenc has no LaTeX for stays as is.
+_DOTLESS_I_ACCENT = re.compile('\u0131([\u0300-\u036f])')
+_RAW_FIELDS = {'url', 'doi', 'adsurl', 'eprint', 'bibcode', 'file', 'pdf', 'archiveprefix', 'primaryclass'}
+_LATEX_ENCODER = UnicodeToLatexEncoder(non_ascii_only=True, replacement_latex_protection='braces-all',
+                                       unknown_char_policy='keep')
+_LATEX_TO_TEXT = LatexNodes2Text(math_mode='verbatim', strict_latex_spaces=True)
+
+def clean_text(s):
+    """Plain, composed UTF-8: a dotless i carrying an accent mark (as text copied from TeX-made PDFs has it) becomes
+    the accented i, and letter + accent mark pairs become single characters (NFC)."""
+    if not s:
+        return s
+    return unicodedata.normalize('NFC', _DOTLESS_I_ACCENT.sub(lambda m: 'i' + m.group(1), s))
+
+def names_from_latex(s):
+    """Author names written in LaTeX ({Rom{\\'a}n}, Javier) as plain UTF-8 (Román, Javier); others just cleaned."""
+    if not s or ('\\' not in s and '{' not in s):
+        return clean_text(s)
+    try:
+        return clean_text(_LATEX_TO_TEXT.latex_to_text(s).replace('\u00a0', ' '))
+    except Exception:
+        return clean_text(s)
+
+# An accent mark with no letter to sit on (left after composing; only damaged data has them) as its LaTeX accent on
+# nothing, so it still reaches BibTeX as ASCII
+_LOOSE_ACCENTS = {'\u0300': "{\\`{}}", '\u0301': "{\\'{}}", '\u0302': '{\\^{}}', '\u0303': '{\\~{}}', '\u0304': '{\\={}}',
+                  '\u0306': '{\\u{}}', '\u0307': '{\\.{}}', '\u0308': '{\\"{}}', '\u030a': '{\\r{}}', '\u030b': '{\\H{}}',
+                  '\u030c': '{\\v{}}', '\u0327': '{\\c{}}', '\u0328': '{\\k{}}'}
+
+def _latex_value(v):
+    """One field value with its non-ASCII characters as braced LaTeX, $...$ math left as it is."""
+    parts = re.split(r'(?<!\\)(\$[^$]*\$)', v)
+    return ''.join(p if len(p) > 1 and p.startswith('$') and p.endswith('$')
+                   else re.sub('[\u0300-\u036f]', lambda m: _LOOSE_ACCENTS.get(m.group(0), ''),
+                               _LATEX_ENCODER.unicode_to_latex(clean_text(p))) for p in parts)
+
+def latex_ascii_entry(entry):
+    """A BibTeX entry with every non-ASCII character in its field values written as braced LaTeX."""
+    if not re.search(r'[^\x00-\x7f]', entry):
+        return entry
+    head = re.match(r'\s*@\w+\s*\{[^,]*,', entry)
+    if not head:
+        return _latex_value(entry)
+    out, i = [entry[:head.end()]], head.end()
+    field = re.compile(r'(\s*)([A-Za-z][\w:.\-]*)(\s*=\s*)')
+    while True:
+        m = field.match(entry, i)
+        if not m:
+            out.append(_latex_value(entry[i:]))
+            break
+        start, end = m.end(), _bib_value_end(entry, m.end())
+        value = entry[start:end]
+        out.append(entry[i:start])
+        out.append(value if m.group(2).lower() in _RAW_FIELDS else _latex_value(value))
+        i = re.compile(r'\s*,?').match(entry, end).end()
+        out.append(entry[end:i])
+        if i >= len(entry) or entry[i] == '}':
+            out.append(_latex_value(entry[i:]))
+            break
+    return ''.join(out)
 
 # ── Export bib (GAS-authenticated) ───────────────────────────────────────────
 @app.route('/api/export/bib-text')
@@ -2129,6 +2198,8 @@ def add_paper_direct():
     bibtex   = (data.get('bibtex')   or '').strip()
     tags     = (data.get('tags')     or '').strip()
     identifiers = data.get('identifiers', [])
+    # Stored as plain UTF-8 (12 Nov 2026): names written in LaTeX are converted, broken accent marks repaired
+    title, authors, journal = clean_text(title), names_from_latex(authors), clean_text(journal)
 
     # Duplicate check by bibcode or bibkey
     bibkey = (data.get('bibkey') or '').strip()
@@ -2600,6 +2671,8 @@ def update_paper(paper_id):
     updates = {k: v for k, v in data.items() if k in allowed}
     if not updates:
         return err('No valid fields')
+    if isinstance(updates.get('title'), str):   updates['title']   = clean_text(updates['title'])        # plain UTF-8
+    if isinstance(updates.get('authors'), str): updates['authors'] = names_from_latex(updates['authors'])
     marks = {k: updates.pop(k) for k in PAPER_MARKS if k in updates}   # personal: paper_flags
     conn  = get_db_connection()
     if marks:
@@ -2783,7 +2856,10 @@ def _is_duplicate(conn, library_id, title, authors, year, journal, volume, pages
     Returns (is_duplicate, existing_bibkey) or (False, None).
     """
     def norm(s):
-        return re.sub(r'\W+', '', (s or '').lower().strip())
+        # accents ignored, whether written in LaTeX (Rom{\'a}n) or as UTF-8 (Román): both become "roman"
+        s = re.sub(r"\\[`'^\"~=.]|\\[uvHcdbtrk](?![a-zA-Z])|\\[a-zA-Z]+\s*|[{}]", '', s or '')
+        s = ''.join(c for c in unicodedata.normalize('NFKD', s) if not unicodedata.combining(c))
+        return re.sub(r'\W+', '', s.lower().strip())
 
     # Fast path: exact unique identifiers
     if bibcode:
@@ -2871,6 +2947,8 @@ def add_paper_manual():
     abstract = (data.get('abstract') or '').strip()
     bibtex   = (data.get('bibtex')   or '').strip()
     tags     = (data.get('tags')     or '').strip()
+    # Stored as plain UTF-8 (12 Nov 2026): names written in LaTeX are converted, broken accent marks repaired
+    title, authors, journal = clean_text(title), names_from_latex(authors), clean_text(journal)
 
     # ── Duplicate check ───────────────────────────────────────────────────
     is_dup, dup_bibkey = _is_duplicate(
@@ -4206,8 +4284,8 @@ def import_bib_file():
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ''', (
             paper_id, library_id, bibkey,
-            fields.get('title', ''),
-            fields.get('author', ''),
+            clean_text(fields.get('title', '')),           # plain UTF-8 (12 Nov 2026); the stored BibTeX keeps
+            names_from_latex(fields.get('author', '')),    # the entry exactly as imported
             fields.get('year', ''),
             fields.get('journal', ''),
             fields.get('volume', ''),
@@ -4398,8 +4476,8 @@ def export_bib():
     for r in rows:
         found_keys.add(r['bibkey'])
         if r['bibtex'] and r['bibtex'].strip():
-            # Use stored BibTeX if available
-            entries.append(r['bibtex'].strip())
+            # Use stored BibTeX if available (accents as LaTeX for BibTeX, since 12 Nov 2026)
+            entries.append(latex_ascii_entry(r['bibtex'].strip()))
         else:
             # Generate BibTeX from fields
             pubtype = r['pubtype'] or 'article'
@@ -4415,7 +4493,7 @@ def export_bib():
             if r['bibcode']: lines.append(
                 f'  adsurl  = {{https://ui.adsabs.harvard.edu/abs/{r["bibcode"]}}},')
             lines.append('}')
-            entries.append('\n'.join(lines))
+            entries.append(latex_ascii_entry('\n'.join(lines)))
 
     missing = [k for k in bibkeys if k not in found_keys]
 

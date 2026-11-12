@@ -77,6 +77,22 @@ Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default.
 
 **Tags in gooTeX's Refs tab** (since 11 Nov 2026): gooTeX asks for the library's BibTeX with `&tags=1` (`/api/export/bib-text?library=NAME&tags=1`), and BibMan then puts each paper's tags in its `keywords` field, which gooTeX searches with `tag:`. Only **shared** labels go out, never private ones, applied by anyone (guests included) on the paper or on any of its notes, each name once. The `keywords` field is **replaced**: a stored BibTeX's own keywords (e.g. ADS's) are left out, also for papers without tags, so `tag:` finds only BibMan tags. Braces are left out of tag names in the export only. Without `&tags=1`, as in the dashboard's *Export .bib to Drive*, the export is unchanged and has no tags, so a `.bib` file that goes elsewhere never carries them. The compile-time export (`/api/export/bib`) is not affected.
 
+## Accents in names and titles
+
+**Stored as plain UTF-8** (since 12 Nov 2026): "Román", "Infante-Sáinz", "Yıldız". Every way of adding or editing a paper stores them that way: names from ADS come as UTF-8 (Core 14 no longer turns them into LaTeX), names written in LaTeX (a `.bib` import, a hand edit) are converted, and broken accent marks are repaired (a dotless ı with a loose accent becomes í; letter + accent mark pairs become one character). A `.bib` import keeps its original BibTeX text as it was. Duplicate checks ignore accents in either form. Papers added before Core 14 may still have LaTeX accents in their fields (`Rom\'{a}n`); they export correctly and need no change.
+
+**Exports that BibTeX reads write accents as braced LaTeX** (`S{\'a}inz`, `Y{\i}ld{\i}z`, `{\O}stergaard`), because gooTeX's BibTeX (0.99d) is not UTF-8-aware: the compile export (`/api/export/bib`) always, and *Export .bib to Drive* (`/api/export/bib-text?...&latex=1`), so a file sent to a journal, arXiv or a colleague works with any LaTeX. The braces keep initials and sorting right ({\'E}lodie → {\'E}.). Left as they are: the key line, address fields (`url`, `doi`, `adsurl`, `eprint`, `bibcode`, `file`, `pdf`, `archiveprefix`, `primaryclass`) and anything inside `$...$` math. Greek letters and symbols in titles become e.g. `{\ensuremath{\alpha}}`, dashes `{\textendash}`, curly quotes `{\textquotedblleft}`. A character the `pylatexenc` package has no LaTeX for is left as it is. gooTeX's Refs-tab export stays UTF-8, for display.
+
+**Repairing damaged accents** (`cloud/bibman_repair_accents.py`): the move from the old spreadsheet (March–April 2026) mangled LaTeX accents in about 200 papers' author lists (bibtexparser's "convert to Unicode": loose accent marks, dotless ı, stray backslashes, letters lost or moved). The script finds them and puts back the author list (and a damaged title) from ADS, keeping the first 10 names and then "et al.". It runs as `bibman`, with ADS's token given for that run only:
+
+```bash
+read -s -p "ADS token: " ADS_TOKEN; echo
+sudo -u bibman env ADS_TOKEN="$ADS_TOKEN" /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_repair_accents.py report --out /tmp/accent_repair
+unset ADS_TOKEN
+```
+
+`report` changes nothing: it writes `report.html` (before and after, to read) and `plan.json`. Then `apply --plan /tmp/accent_repair/plan.json [--skip key1,key2] [--include key3]` writes the damaged ones except those skipped; papers whose only sign is a dotless ı (which can be a correct Turkish name) are changed only when named with `--include`. A paper edited since the report is left alone. Before writing, the old values are saved to `undo-<time>.json` beside the plan, and `undo --undo <that file>` puts them back.
+
 ## Gemini billing (Prepay)
 
 Gemini API accounts created since March 2026 default to Google's **Prepay** plan: you buy credit in advance in AI Studio (ai.studio/projects → your project → Billing), and usage is deducted from it. **When the balance reaches $0, every key on that billing account stops working at once**, with HTTP 402 ("Your prepayment credits are depleted"). Venn Search then falls back to keyword-only results and (since 28 October 2026) shows a red warning saying why, and the nightly embeddings and synonym suggestions fail until credit is added. Nothing is lost; the nightly job catches up once the key works again.
