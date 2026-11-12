@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 Repair author lists and titles whose accents were damaged (12 Nov 2026).
 
 The move from the old spreadsheet into BibMan (March–April 2026) read the old BibTeX with bibtexparser's "convert to
@@ -14,6 +14,9 @@ list (and the title, where it is damaged too) from NASA ADS, as plain UTF-8, whi
      can be a correct Turkish name such as Yıldız) are changed only when named in --include. A paper whose authors or
      title changed since the report is left alone. Before writing, it saves the old values to undo-<time>.json.
        python bibman_repair_accents.py apply --plan /tmp/accent_repair/plan.json [--skip key1,key2] [--include key3]
+                                              [--fix fixes.json]
+     --fix gives corrected values where ADS's own are unusable, as {"bibkey": {"authors": "...", "title": "..."}}: they
+     replace the plan's values for those papers (which are then repaired even if listed as "only a dotless i").
   3. undo, if ever needed: puts back exactly the values saved in an undo file.
        python bibman_repair_accents.py undo --undo /tmp/accent_repair/undo-<time>.json
 
@@ -34,10 +37,18 @@ def clean_text(s):
     """Plain, composed UTF-8 (as the server's clean_text)."""
     return unicodedata.normalize('NFC', _DOTLESS_ACC.sub(lambda m: 'i' + m.group(1), s or ''))
 
+LATEX_ACCENT   = re.compile(r"\\[`'^\"~=.]|\\[uvHcdbtrk]\s*\{|\\(?:i|j|l|L|o|O|ss|ae|AE|aa|AA|oe|OE)(?![A-Za-z])")
+
 def classify(text):
-    if DAMAGE.search(text or ''):    return 'damaged'
-    if DOTLESS_I.search(text or ''): return 'check'
+    if DAMAGE.search(text or ''):       return 'damaged'
+    if LATEX_ACCENT.search(text or ''): return 'latex'
+    if DOTLESS_I.search(text or ''):    return 'check'
     return None
+
+def names_from_latex(s):
+    """Author names written in LaTeX (C\\^{o}t\\'{e}) as plain UTF-8 (Côté), as the server's names_from_latex."""
+    from pylatexenc.latex2text import LatexNodes2Text
+    return clean_text(LatexNodes2Text(math_mode='verbatim', strict_latex_spaces=True).latex_to_text(s).replace('\u00a0', ' '))
 
 def ads_lookup(session, token, bibcode, doi):
     """ADS's record for a paper, by bibcode, else by DOI: {bibcode, author, title} or None."""
@@ -72,9 +83,21 @@ def report(args):
     conn.close()
     plan, session = [], requests.Session()
     found = [(r, classify(r['authors']), classify(r['title'])) for r in rows]
-    found = [(r, a, t) for r, a, t in found if a or t]
-    print(f'{len(found)} papers to look up on ADS ...')
+    # Author lists written in LaTeX accents (papers added before Core 14) but not damaged: converted to UTF-8 here,
+    # all names kept, no ADS needed (titles may hold math, so they are left alone)
+    for r, a, t in found:
+        if a == 'latex' and t != 'damaged':
+            after = names_from_latex(r['authors'])
+            if after != r['authors']:
+                plan.append({'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'category': 'latex',
+                             'bibcode': r['bibcode'] or '', 'doi': r['doi'] or '', 'authors_before': r['authors'],
+                             'title_before': r['title'] or '', 'authors_after': after, 'title_after': None, 'notes': []})
+    found = [(r, a, t) for r, a, t in found if 'damaged' in (a, t) or (a == 'check' and t != 'latex') or t == 'check']
+    found = [(r, a, t) for r, a, t in found if not any(p['id'] == r['id'] for p in plan)]
+    print(f"{len([p for p in plan if p['category'] == 'latex'])} author lists with LaTeX accents to convert; "
+          f"{len(found)} papers to look up on ADS ...")
     for n, (r, a_cls, t_cls) in enumerate(found, 1):
+        a_cls = None if a_cls == 'latex' else a_cls; t_cls = None if t_cls == 'latex' else t_cls
         category = 'damaged' if 'damaged' in (a_cls, t_cls) else 'check'
         item = {'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'category': category,
                 'bibcode': r['bibcode'] or '', 'doi': r['doi'] or '',
@@ -90,9 +113,9 @@ def report(args):
             if a_cls:
                 item['authors_after'] = ads_authors(doc.get('author'))
             if t_cls and doc.get('title'):
-                item['title_after'] = clean_text(doc['title'][0])
-                if re.search(r'[<&$\\]', item['title_after']):
-                    item['notes'].append("ADS's title contains markup or LaTeX: check it")
+                item['title_after'] = clean_text(html.unescape(doc['title'][0]))
+                if re.search(r'[<>&$\\~^_]', item['title_after']):   # ADS writes e.g. "z ~ 7", "<~", "10^8 M_☉"
+                    item['notes'].append("ADS's title has symbols LaTeX would misread (~ ^ _ < >): check it")
             if item['authors_after'] == item['authors_before']: item['authors_after'] = None
             if item['title_after'] == item['title_before']:     item['title_after'] = None
             if doc and item['authors_after'] is None and item['title_after'] is None:
@@ -108,8 +131,8 @@ def report(args):
                   ensure_ascii=False, indent=1)
     write_html(plan, os.path.join(args.out, 'report.html'))
     dmg = [p for p in plan if p['category'] == 'damaged']
-    print(f"damaged: {len(dmg)} ({sum(1 for p in dmg if p['authors_after'] or p['title_after'])} with a repair from ADS); "
-          f"only a dotless i: {len(plan) - len(dmg)}")
+    print(f"LaTeX accents to convert: {sum(1 for p in plan if p['category'] == 'latex')}; damaged: {len(dmg)} ({sum(1 for p in dmg if p['authors_after'] or p['title_after'])} with a repair from ADS); "
+          f"only a dotless i: {sum(1 for p in plan if p['category'] == 'check')}")
     print(f"written: {args.out}/report.html and {args.out}/plan.json (nothing in the database was changed)")
 
 def write_html(plan, path):
@@ -127,6 +150,7 @@ def write_html(plan, path):
                            f"<td>{esc('; '.join(p['notes']))}</td></tr>")
         return '\n'.join(out)
     dmg = [p for p in plan if p['category'] == 'damaged']; chk = [p for p in plan if p['category'] == 'check']
+    ltx = [p for p in plan if p['category'] == 'latex']
     head = '<tr><th>Paper</th><th>Field</th><th>Now</th><th>From ADS</th><th>Notes</th></tr>'
     doc = f'''<!doctype html><meta charset="utf-8"><title>BibMan accent repair report</title>
 <style>body{{font-family:sans-serif;font-size:13px;margin:16px}}table{{border-collapse:collapse;width:100%}}
@@ -137,7 +161,10 @@ small{{color:#666}}</style>
 <h3>Damaged: {len(dmg)} papers (repaired by "apply", except those you name with --skip)</h3>
 <table>{head}{rows(dmg)}</table>
 <h3>Only a dotless i: {len(chk)} papers (possibly correct, e.g. Turkish names; changed only if you name them with --include)</h3>
-<table>{head}{rows(chk)}</table>'''
+<table>{head}{rows(chk)}</table>
+<h3>LaTeX accents: {len(ltx)} author lists written as e.g. C\\^{{o}}t\\'{{e}}, converted to plain UTF-8 with all names kept,
+no ADS needed (changed by "apply", except those you name with --skip)</h3>
+<table>{head}{rows(ltx)}</table>'''
     with open(path, 'w', encoding='utf-8') as f:
         f.write(doc)
 
@@ -146,11 +173,21 @@ def apply(args):
         plan = json.load(f)['papers']
     skip    = {k.strip() for k in (args.skip or '').split(',') if k.strip()}
     include = {k.strip() for k in (args.include or '').split(',') if k.strip()}
-    unknown = (skip | include) - {p['bibkey'] for p in plan}
+    fixes   = {}
+    if getattr(args, 'fix', None):
+        with open(args.fix, encoding='utf-8') as f:
+            fixes = json.load(f)
+    unknown = (skip | include | set(fixes)) - {p['bibkey'] for p in plan}
     if unknown:
         sys.exit(f'Not in the plan (check the spelling): {", ".join(sorted(unknown))}')
+    for p in plan:                                  # corrected values given by hand win over ADS's
+        for field in ('authors', 'title'):
+            if field in fixes.get(p['bibkey'], {}):
+                p[f'{field}_after'] = clean_text(fixes[p['bibkey']][field])
+        if p['bibkey'] in fixes:
+            include.add(p['bibkey'])
     todo = [p for p in plan if (p['authors_after'] is not None or p['title_after'] is not None)
-            and p['bibkey'] not in skip and (p['category'] == 'damaged' or p['bibkey'] in include)]
+            and p['bibkey'] not in skip and (p['category'] in ('damaged', 'latex') or p['bibkey'] in include)]
     conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
     undo, changed, stale = [], 0, []
     for p in todo:
@@ -159,7 +196,7 @@ def apply(args):
             stale.append(p['bibkey']); continue
         undo.append({'id': p['id'], 'bibkey': p['bibkey'], 'authors': r['authors'], 'title': r['title']})
     undo_path = os.path.join(os.path.dirname(os.path.abspath(args.plan)),
-                             'undo-' + datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S') + '.json')
+                             'undo-' + datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f') + '.json')   # never overwrites one
     with open(undo_path, 'w', encoding='utf-8') as f:           # saved before anything is written
         json.dump(undo, f, ensure_ascii=False, indent=1)
     keep = {u['id'] for u in undo}
@@ -191,6 +228,7 @@ if __name__ == '__main__':
     sub = ap.add_subparsers(dest='cmd', required=True)
     a = sub.add_parser('report'); a.add_argument('--out', default='/tmp/accent_repair')
     b = sub.add_parser('apply');  b.add_argument('--plan', required=True); b.add_argument('--skip'); b.add_argument('--include')
+    b.add_argument('--fix')
     c = sub.add_parser('undo');   c.add_argument('--undo', required=True)
     args = ap.parse_args()
     {'report': report, 'apply': apply, 'undo': undo}[args.cmd](args)

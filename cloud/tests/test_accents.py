@@ -55,11 +55,13 @@ def test_repair_script(server, tmp_path, monkeypatch):
     skp = _add(c, 'Skip me', 'z', bibkey='skip2020', bibcode='2020S')['paper_id']
     gone = _add(c, 'Not on ADS', 'w', bibkey='gone2020', bibcode='2020G')['paper_id']
     stale = _add(c, 'Edited later', 'v', bibkey='stale2020', bibcode='2020T')['paper_id']
+    ltx = _add(c, 'LaTeX names', 'u', bibkey='ltx2025', bibcode='2025L')['paper_id']
     conn.execute('UPDATE papers SET authors=? WHERE id=?', ("Infante-S\\ínz, Ra\\' ́and Mart\\'ıánd", bad))
     conn.execute('UPDATE papers SET authors=? WHERE id=?', ('Yıldız, M.', tur))
     conn.execute('UPDATE papers SET authors=? WHERE id=?', ('Bád, S.', skp))
     conn.execute('UPDATE papers SET authors=? WHERE id=?', ('Góne, G.', gone))
     conn.execute('UPDATE papers SET authors=? WHERE id=?', ('Sta\u0301le, T.', stale))
+    conn.execute('UPDATE papers SET authors=? WHERE id=?', ("Sola, E. and C\\^{o}t\\'{e}, P. and Y\u0131ld\u0131z, M. K. and M\\\"{u}ller, O.", ltx))
     conn.commit()
     sys.path.insert(0, os.path.dirname(server.__file__)); import bibman_repair_accents as R
     monkeypatch.setattr(R, 'DB_PATH', db)
@@ -82,6 +84,7 @@ def test_repair_script(server, tmp_path, monkeypatch):
     assert plan['dmg2019']['category'] == 'damaged'
     assert plan['dmg2019']['authors_after'] == ' and '.join(f'Author{i}, A.' for i in range(1, 11)) + ' and et al.'
     assert plan['tur2020']['category'] == 'check' and plan['tur2020']['authors_after'] is None   # same as ADS's
+    assert plan['ltx2025']['category'] == 'latex' and plan['ltx2025']['authors_after'] == 'Sola, E. and Côté, P. and Yıldız, M. K. and Müller, O.'
     assert plan['gone2020']['authors_after'] is None and 'not found on ADS' in plan['gone2020']['notes'][0]
     assert 'Damaged: ' in (out / 'report.html').read_text()
     before = conn.execute('SELECT authors FROM papers WHERE id=?', (bad,)).fetchone()[0]
@@ -91,6 +94,12 @@ def test_repair_script(server, tmp_path, monkeypatch):
     R.apply(type('A', (), {'plan': str(out / 'plan.json'), 'skip': 'skip2020', 'include': ''}))
     get = lambda pid: conn.execute('SELECT authors FROM papers WHERE id=?', (pid,)).fetchone()[0]
     assert get(bad).startswith('Author1, A. and') and get(skp) == 'Bád, S.' and get(stale) == 'Hand Fixed, T.'
+    assert get(ltx) == 'Sola, E. and Côté, P. and Yıldız, M. K. and Müller, O.'
     undo = sorted(out.glob('undo-*.json'))[-1]
+    # --fix: corrected values given by hand win over ADS's, and include a paper the plan only lists for checking
+    import json as _j; fx = tmp_path / 'fixes.json'
+    _j.dump({'tur2020': {'authors': 'Yıldız, Mustafa K.'}}, open(fx, 'w', encoding='utf-8'), ensure_ascii=False)
+    R.apply(type('A', (), {'plan': str(out / 'plan.json'), 'skip': '', 'include': '', 'fix': str(fx)}))
+    assert get(tur) == 'Yıldız, Mustafa K.'
     R.undo(type('A', (), {'undo': str(undo)}))
     assert get(bad) == before
