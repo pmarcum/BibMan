@@ -43,12 +43,12 @@ server compresses search queries the same way:
 
 Usage (as the bibman user, with BibMan's Python; a full rebuild takes hours on an e2-micro, so run it when nobody
 is using BibMan or gooTeX; a small library takes seconds):
-  sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --dry-run
-  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py                 # all
-  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --library Satellites
-  sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --rollback --library Satellites
-  sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --recheck --library Extragalactic
-  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python bibman_rebuild_usearch.py --sync      # what the nightly job runs
+  sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --dry-run
+  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py                 # all
+  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --library Satellites
+  sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --rollback --library Satellites
+  sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --recheck --library Extragalactic
+  sudo -u bibman nice -n 19 /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --sync      # what the nightly job runs
   (add --replace-prev once you are happy with the current indexes; add --method A/B/C to choose compression)
 """
 import os, sys, json, time, fcntl, sqlite3, argparse

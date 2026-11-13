@@ -22,3 +22,19 @@ backfill_list.txt
 *.usearch.timestamp
 *.log
 vec0.so
+vec0*.so
+*.dylib
+# Generated or machine-local files that could appear in the VM's checkout (the VM never commits; this keeps git status clean)
+.pytest_cache/
+*.bak
+*.bak_*
+*.prev
+*.failed
+*.npy
+*.lock
+*.pdf
+undo-*.json
+fixes.json
+plan.json
+*-report.html
+*-plan.json

@@ -14,8 +14,8 @@ One-time repair of the tag table (2 Nov 2026), and removal of tags and @mentions
 DRY RUN by default (the database is opened read-only); --apply makes the changes, the rebuild in one transaction.
 Running it again after --apply finds nothing to do. Safe while BibMan is running.
 
-    sudo -u bibman /home/bibman/bibman/venv/bin/python ~/bibman_fix_tags.py
-    sudo -u bibman /home/bibman/bibman/venv/bin/python ~/bibman_fix_tags.py --apply
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_fix_tags.py
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_fix_tags.py --apply
 """
 import os, re, sys, csv, sqlite3, argparse
 from datetime import datetime, timezone

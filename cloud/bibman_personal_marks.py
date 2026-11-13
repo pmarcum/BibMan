@@ -18,8 +18,8 @@ Safe by design: DRY RUN by default (shows what it would do, changes nothing); --
 one transaction (all or nothing); running it again changes nothing more.
 
 Run as the bibman user, with BibMan's Python:
-    sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_personal_marks.py --user pamelammarcum
-    sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_personal_marks.py --user pamelammarcum --apply
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_personal_marks.py --user pamelammarcum
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_personal_marks.py --user pamelammarcum --apply
 """
 import os, sys, uuid, sqlite3, argparse
 

@@ -53,15 +53,14 @@ sudo adduser --disabled-password --gecos "" bibman
 
 ```bash
 sudo -iu bibman
-git clone https://github.com/pmarcum/BibMan.git ~/BibMan-repo
-mkdir -p ~/bibman && cp ~/BibMan-repo/cloud/*.py ~/BibMan-repo/cloud/schema.sql ~/bibman/
-cd ~/bibman && python3 -m venv venv && venv/bin/pip install -r ~/BibMan-repo/cloud/requirements.txt
+git clone https://github.com/pmarcum/BibMan.git ~/bibman
+cd ~/bibman && python3 -m venv venv && venv/bin/pip install -r cloud/requirements.txt
 ```
 
 **4. Create an empty database.** Pick a name for your first library:
 
 ```bash
-DB_PATH=/home/bibman/bibman.db LIBRARY_NAME=MyLibrary venv/bin/python init_db.py
+DB_PATH=/home/bibman/bibman.db LIBRARY_NAME=MyLibrary venv/bin/python cloud/init_db.py
 exit   # back to your own account
 ```
 
@@ -75,10 +74,22 @@ openssl rand -hex 16   # GAS_CREDENTIAL — you'll paste this into all three App
 ```
 
 ```bash
-sudo cp /home/bibman/BibMan-repo/cloud/systemd/bibman.service /etc/systemd/system/
-sudo nano /etc/systemd/system/bibman.service   # fill in the two REPLACE_ME values and LIBRARY_NAME
+sudo cp /home/bibman/bibman/cloud/systemd/bibman.service /etc/systemd/system/
+sudo mkdir -p /etc/systemd/system/bibman.service.d
+sudo nano /etc/systemd/system/bibman.service.d/override.conf   # the settings for this machine, below
+sudo chmod 600 /etc/systemd/system/bibman.service.d/override.conf
 sudo systemctl daemon-reload && sudo systemctl enable --now bibman
 curl -s http://127.0.0.1:8081/health           # → {"status":"healthy", ...}
+```
+
+`override.conf` holds what is particular to this machine, including the two secrets; the service file itself holds none and is installed exactly as it is in the repo:
+
+```
+[Service]
+Environment=DB_PATH=/home/bibman/bibman.db
+Environment=LIBRARY_NAME=MyLibrary
+Environment=SESSION_SECRET=<the first value>
+Environment=GAS_CREDENTIAL=<the second value>
 ```
 
 **6. Put nginx and HTTPS in front of it.** Get the certificate first, while nginx's default site is still answering on port 80:
@@ -90,7 +101,7 @@ sudo certbot certonly --nginx -d yourname.duckdns.org
 Then install BibMan's site config in place of the default one:
 
 ```bash
-sudo cp /home/bibman/BibMan-repo/cloud/nginx/proxy-router.conf /etc/nginx/sites-available/proxy-router
+sudo cp /home/bibman/bibman/cloud/nginx/proxy-router.conf /etc/nginx/sites-available/proxy-router
 sudo sed -i 's/YOUR-SUBDOMAIN/yourname/g' /etc/nginx/sites-available/proxy-router
 sudo ln -s /etc/nginx/sites-available/proxy-router /etc/nginx/sites-enabled/ && sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
@@ -185,9 +196,9 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
   Check them with `ls -l`: the line should start `-rw-------`. Both BibMan and gooTeX run as `bibman`, so this never locks either one out.
 - **Remove leftovers.** Don't leave copies of keys, old backups of the service file, or one-off scripts lying around in home folders or `/tmp` once you're done with them.
 
-- **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, so only give the dashboard link and access code to people you trust. (The Gemini key stays in Apps Script: since Core 4 it is no longer sent to browsers.) If someone leaves, generate a new value, change it in `bibman.service` and all three projects, restart, and have everyone re-drag the bookmarklet.
+- **`GAS_CREDENTIAL` is the key to your server.** Anyone who has it can read and change the library. It is built into every user's bookmarklet and is sent to the dashboard in each signed-in user's browser, so only give the dashboard link and access code to people you trust. (The Gemini key stays in Apps Script: since Core 4 it is no longer sent to browsers.) If someone leaves, generate a new value, change it in `bibman.service.d/override.conf` and all three projects, restart, and have everyone re-drag the bookmarklet.
 - **`/get_bib` has no credential check**, and nothing needs to reach it from outside the VM (gooTeX does not use it). The supplied nginx config blocks it at the public address; keep that block if you edit the config. Don't delete the Python function `get_bib()` itself: the authenticated `/api/export/bib-text` route uses it.
-- **Never commit** `bibman.db`, the `.usearch` index, `bibman_config.json`, or a filled-in `bibman.service`. The repo's `.gitignore` covers the common names.
+- **Never commit** `bibman.db`, the `.usearch` index, `bibman_config.json`, or `override.conf`. The repo's `.gitignore` covers the common names; the database and indexes also live outside the checkout, in `/home/bibman/`.
 
 ## Using BibMan with gooTeX
 
@@ -198,7 +209,7 @@ To check it, open `https://bibman-get-pdf.<your-subdomain>.workers.dev/<key>?url
 
 Give gooTeX its own **read-only** key rather than `GAS_CREDENTIAL`:
 
-1. On the VM, put the key in its own small settings file next to the service (your `bibman.service` stays untouched):
+1. On the VM, put the key in its own small settings file next to the service (`bibman.service` and `override.conf` stay untouched):
    ```
    NEWKEY=$(openssl rand -hex 16); echo "$NEWKEY"        # keep this value; gooTeX needs it
    sudo mkdir -p /etc/systemd/system/bibman.service.d

@@ -1,5 +1,11 @@
 # Changelog
 
+## 13 November 2026: the VM runs a git checkout
+
+- **`/home/bibman/bibman` is now a git checkout of this repo**, the server running from `cloud/` with the same `venv/`. Deploying is `git pull --ff-only` and a restart; files on the VM are no longer copied or edited by hand (see MAINTENANCE.md, *Updating the server code*).
+- **`cloud/systemd/bibman.service` holds no secrets and is installed as it is**: `DB_PATH`, `LIBRARY_NAME`, `SESSION_SECRET` and `GAS_CREDENTIAL` go in the drop-in `bibman.service.d/override.conf`.
+- `.gitignore` also covers backups, index side files, reports, undo files and PDFs. Script usage lines and DEPLOY.md use the new paths. No code changed.
+
 ## 12 November 2026 (later): < > | in exported titles print right
 
 - **The compile export and Export .bib to Drive write `<`, `>` and `|` outside math as `{\textless}`, `{\textgreater}`, `{\textbar}`.** In the default OT1 font encoding (aastex, many journal classes) plain `<` `>` `|` in text print as ¡ ¿ —; 88 titles had them (e.g. Bernardi et al. 2011, `M$_{*}$ > 2`). Math, including `\ensuremath{...}`, and address fields are left as they are; the database is unchanged.

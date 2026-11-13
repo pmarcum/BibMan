@@ -4,7 +4,7 @@ BibMan search health check: READ-ONLY. It changes nothing: the database is opene
 the search index is only viewed, and no file is written.
 
 Run on the VM (a minute or two):
-    sudo -u bibman /home/bibman/bibman/venv/bin/python ~/bibman_search_check.py
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_search_check.py
 
 It answers, from your real data:
   1. how many passages lack a search ID, and whether they already have embeddings;

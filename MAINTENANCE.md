@@ -6,7 +6,7 @@ For whoever hosts a BibMan instance. Setup is in [DEPLOY.md](DEPLOY.md). This pa
 
 | Path | What it is |
 |---|---|
-| `/home/bibman/bibman/` | Server code (`bibman_e2micro_server.py`, `bibman_cron.py`, `bibman_rebuild_usearch.py`) and its `venv/` |
+| `/home/bibman/bibman/` | A git checkout of this repo (since 13 Nov 2026): the server code in `cloud/` (`bibman_e2micro_server.py`, `bibman_rebuild_usearch.py`, …), and `venv/`, BibMan's Python, at the top (not in git). Never edit files here by hand: see [Updating the server code](#updating-the-server-code). |
 | `/home/bibman/bibman.db` | The SQLite database: every library, paper, passage, annotation, tag, and the 3072-dim Gemini embeddings (`vec_passages`, `vec_annotations`). **This is the data. It is not in git.** |
 | `/home/bibman/bibman_768_i8.lib-<library id>.usearch` | Semantic-search indexes, one per library, loaded when the service starts and listed in `bibman_768_i8.libraries.json`. Can always be rebuilt from the database. (`bibman_768_i8.usearch`, the shared index used before 31 Oct 2026, is no longer read; it was deleted on 10 Nov 2026, with its two small companion files `bibman_768.usearch.timestamp` and `bibman_768_i8.usearch.method`.) |
 | `/home/bibman/bibman_config.json` | Small runtime settings the server writes itself (current library, last-seen Apps Script URL). |
@@ -89,7 +89,7 @@ Since 29 October 2026, tag labels (`user_tag_labels`) are **shared** by default.
 
 ```bash
 read -s -p "ADS token: " ADS_TOKEN; echo
-sudo -u bibman env ADS_TOKEN="$ADS_TOKEN" /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_repair_accents.py report --out /tmp/accent_repair
+sudo -u bibman env ADS_TOKEN="$ADS_TOKEN" /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_repair_accents.py report --out /tmp/accent_repair
 unset ADS_TOKEN
 ```
 
@@ -123,7 +123,7 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 - **The sync** loads a library's index into memory to change it (about 420 MB for a 390,000-passage library, as much as a rebuild), adds and removes passages, and checks the result before it replaces the index: the passages it added (up to 300) plus 50 already in the index must each be present, at least 97% of them coming back within the first 10. It keeps the previous index as `.prev` (replaced at each sync); a result that fails the check is kept as `.failed`, the current index stays in use, and the log says why. Each index has a small list of its passage IDs next to it (`bibman_768_i8.lib-<library id>.keys.npy`, about 3 MB for 390,000 passages), so on a night with nothing new the sync sees that within minutes without loading the index; only when there are changes does it load, change and save the index file. The log shows how long each stage took. Only one sync or rebuild runs at a time.
 - **Check the sync now and then:** `tail -20 /home/bibman/bibman_usearch_sync.log`. Each night it lists, per library, `already up to date` or `synced: N added, M removed … check passed`. If a library's sync fails night after night, run a full rebuild of that library.
 
-**Scripts** (in `cloud/`, installed in `/home/bibman/bibman/`; all run as `bibman` with BibMan's Python):
+**Scripts** (in `/home/bibman/bibman/cloud/`; all run as `bibman` with BibMan's Python, `/home/bibman/bibman/venv/bin/python`):
 
 | Script | What it does | Changes anything? |
 |---|---|---|
@@ -136,13 +136,13 @@ read -rs -p "Paste Gemini key (hidden): " K; echo; curl -s -X POST -H "x-goog-ap
 1. **Back up first:** take a snapshot of the VM's disk by hand (Compute Engine → Snapshots → *Create snapshot*; see [Backups](#backups)). It costs cents and covers everything, including the database.
 2. **Run the scripts:**
 ```
-cd /home/bibman/bibman
-sudo -u bibman venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
-sudo -u bibman venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
-sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --dry-run      # lists each library's passages and any .prev backups
+cd /home/bibman/bibman/cloud
+sudo -u bibman ../venv/bin/python bibman_backfill_search_ids.py            # dry run: how many IDs are missing
+sudo -u bibman ../venv/bin/python bibman_backfill_search_ids.py --apply    # only if the dry run said OK
+sudo -u bibman ../venv/bin/python bibman_rebuild_usearch.py --dry-run      # lists each library's passages and any .prev backups
 # about 4 hours for ~390,000 passages on an e2-micro; runs in the background, so a dropped SSH session doesn't stop it
-sudo -u bibman nohup nice -n 19 venv/bin/python bibman_rebuild_usearch.py > ~/rebuild.log 2>&1 &
-# (or only one library:  sudo -u bibman venv/bin/python bibman_rebuild_usearch.py --library Satellites)
+sudo -u bibman nohup nice -n 19 ../venv/bin/python bibman_rebuild_usearch.py > ~/rebuild.log 2>&1 &
+# (or only one library:  sudo -u bibman ../venv/bin/python bibman_rebuild_usearch.py --library Satellites)
 tail -f ~/rebuild.log                          # watch progress (Ctrl+C stops watching, not the rebuild); wait for "finished"
 # BibMan loads the new index by itself before the next search; the log then shows it:
 sudo journalctl -u bibman -n 12 --no-pager    # expect "USearch index loaded for <library>: N vectors, method C" per library
@@ -154,7 +154,7 @@ sudo journalctl -u bibman -n 12 --no-pager    # expect "USearch index loaded for
 
 **To go back to the previous index:**
 ```
-sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/bibman_rebuild_usearch.py --rollback --library Extragalactic
+sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_rebuild_usearch.py --rollback --library Extragalactic
 ```
 This swaps that library's index with its `.prev` (and its entry in the list file); BibMan picks it up before the next search. Running it again swaps them back. (The next nightly sync then brings the restored index up to date.)
 
@@ -162,20 +162,24 @@ Never run the old one-off `reindex_i8.py`: it overwrites the index file that the
 
 ## Updating the server code
 
-**This repo is the source of truth.** To deploy a change:
+**This repo is the source of truth, and the VM runs a git checkout of it** (`/home/bibman/bibman`, since 13 Nov 2026). Changes are made in the repo, reviewed and pushed to `main`; the VM never commits or pushes (it pulls without signing in to GitHub). To deploy what is in `main`:
 
 ```bash
-sudo -iu bibman
-cd ~/BibMan-repo && git pull
-cp ~/bibman/bibman_e2micro_server.py ~/bibman/bibman_e2micro_server.py.bak_$(date +%Y%m%d)
-cp cloud/bibman_e2micro_server.py ~/bibman/
-exit
+sudo -u bibman git -C /home/bibman/bibman pull --ff-only
 sudo systemctl restart bibman && sudo journalctl -u bibman -n 30 --no-pager
 ```
 
-If something breaks, copy the `.bak_` file back and restart. To confirm the VM is running exactly what the repo holds, compare checksums: `sha256sum /home/bibman/bibman/bibman_e2micro_server.py` against `sha256sum cloud/bibman_e2micro_server.py` in a fresh clone.
+- **A pull installs everything that changed in `main`**, not one file at a time.
+- **If `cloud/requirements.txt` changed**, also run `sudo -u bibman /home/bibman/bibman/venv/bin/pip install -r /home/bibman/bibman/cloud/requirements.txt` before the restart.
+- **Never edit files in the checkout by hand.** A pull refuses to overwrite local edits, and edits not in the repo are lost at the next clean-up. `sudo -u bibman git -C /home/bibman/bibman status --short` should print nothing.
+- **Going back:** `sudo -u bibman git -C /home/bibman/bibman log --oneline -5` lists recent versions; `sudo -u bibman git -C /home/bibman/bibman checkout <commit>` and a restart runs an older one. Return with `git -C /home/bibman/bibman checkout main` and a pull.
+- **Emergency fix on the VM** (only if it can't wait for the repo): edit the file in the checkout and restart; save the change with `sudo -u bibman git -C /home/bibman/bibman diff > ~/hotfix.patch`, copy it to your own computer, apply it there (`git apply hotfix.patch`), commit and push; then on the VM `sudo -u bibman git -C /home/bibman/bibman checkout -- .` and pull as usual.
+- **Settings and secrets** are not in the checkout: `DB_PATH`, `LIBRARY_NAME`, `SESSION_SECRET` and `GAS_CREDENTIAL` are in `/etc/systemd/system/bibman.service.d/override.conf`, `EXPORT_CREDENTIAL` in `export-credential.conf` next to it (both `chmod 600`). The service file `/etc/systemd/system/bibman.service` is `cloud/systemd/bibman.service` as it is; if that file changes in the repo, copy it again and run `sudo systemctl daemon-reload` before the restart.
+- **The Apps Script projects** (Core, dashboard, Capture) are not deployed this way: their code is pasted from `apps_script/` into each project and published as a new version.
 
-**The dashboard's version line says this too (since 8 Nov 2026).** Hover over *BibMan vCORE.DASHBOARD* under the logo: its last line says whether the server is up to date with GitHub's `main`, whether `main` has newer server changes (install them as above; it also says which version the VM runs), whether the VM runs a version that is on GitHub but not in `main` (a test branch not yet merged, or one older than `main`'s last 10 server versions), or one that is not on GitHub at all. The server works this out from the fingerprint Git gives its own file (`git hash-object`), compared with `cloud/bibman_e2micro_server.py` in `main` and, when they differ, with `main`'s last 10 versions of that file (since 9 Nov 2026; before, any copy anywhere on GitHub counted as "older", so a server pushed to a test branch was wrongly reported as out of date). **The server contacts api.github.com for this at most every 10 minutes** (three small requests, no sign-in, 3-second timeout each, answers and failures kept for 10 minutes); looking back through `main`'s history costs one more request per older version and is done only once for each new server change in `main`. GitHub allows 60 requests an hour without sign-in. It runs in the background, so no dashboard request waits for GitHub except the first one after a restart (at most 3.5 seconds). The repository asked about is `pmarcum/BibMan`; another group's fork sets `Environment="BIBMAN_GITHUB_REPO=owner/repo"` in its service file. Tests for this live in `cloud/tests` and never contact GitHub: `cd cloud && ../venv/bin/python -m pytest tests -q` (needs `pip install pytest` in the venv once).
+To confirm the VM runs exactly what `main` holds: `sudo -u bibman git -C /home/bibman/bibman status -sb` shows `## main...origin/main` and nothing else after a `git -C /home/bibman/bibman fetch`.
+
+**The dashboard's version line says this too (since 8 Nov 2026).** Hover over *BibMan vCORE.DASHBOARD* under the logo: its last line says whether the server is up to date with GitHub's `main`, whether `main` has newer server changes (pull them as above; it also says which version the VM runs), whether the VM runs a version that is on GitHub but not in `main` (a test branch not yet merged, or one older than `main`'s last 10 server versions), or one that is not on GitHub at all. The server works this out from the fingerprint Git gives its own file (`git hash-object`), compared with `cloud/bibman_e2micro_server.py` in `main` and, when they differ, with `main`'s last 10 versions of that file (since 9 Nov 2026; before, any copy anywhere on GitHub counted as "older", so a server pushed to a test branch was wrongly reported as out of date). **The server contacts api.github.com for this at most every 10 minutes** (three small requests, no sign-in, 3-second timeout each, answers and failures kept for 10 minutes); looking back through `main`'s history costs one more request per older version and is done only once for each new server change in `main`. GitHub allows 60 requests an hour without sign-in. It runs in the background, so no dashboard request waits for GitHub except the first one after a restart (at most 3.5 seconds). The repository asked about is `pmarcum/BibMan`; another group's fork sets `Environment="BIBMAN_GITHUB_REPO=owner/repo"` in its service file. Tests for this live in `cloud/tests` and never contact GitHub: `cd cloud && ../venv/bin/python -m pytest tests -q` (needs `pip install pytest` in the venv once).
 
 Newer tables and columns are added by the server itself whenever it opens the database (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … ADD COLUMN`), so ordinary updates need no manual database migration. If you change the schema, also update `cloud/schema.sql` so new instances start with it: `sqlite3 -readonly bibman.db .schema` prints the current definitions (remove the FTS/vec0 shadow tables, as the header of `schema.sql` explains).
 

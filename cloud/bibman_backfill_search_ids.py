@@ -20,8 +20,8 @@ Safe by design:
   * Everything happens in one transaction: it either completes or changes nothing.
 
 Run as the bibman user, with BibMan's own Python:
-    sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_backfill_search_ids.py            # dry run
-    sudo -u bibman /home/bibman/bibman/venv/bin/python bibman_backfill_search_ids.py --apply    # write
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_backfill_search_ids.py            # dry run
+    sudo -u bibman /home/bibman/bibman/venv/bin/python /home/bibman/bibman/cloud/bibman_backfill_search_ids.py --apply    # write
 """
 import os, sys, sqlite3
 

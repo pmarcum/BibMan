@@ -1,8 +1,14 @@
 # /etc/systemd/system/bibman.service — BibMan Flask backend (gunicorn on localhost only; nginx fronts it)
-# Fill in the two REPLACE_ME values, then:  sudo systemctl daemon-reload && sudo systemctl enable --now bibman
-#   SESSION_SECRET:  openssl rand -hex 24
-#   GAS_CREDENTIAL:  openssl rand -hex 16   (the same value goes in every Apps Script project's GAS_CREDENTIAL property)
-#   The service refuses to start if GAS_CREDENTIAL is missing or shorter than 16 characters.
+# Runs from the git checkout /home/bibman/bibman (code in cloud/, venv/ at the top). This file holds no secrets and is
+# installed as it is: settings for one machine go in a drop-in, /etc/systemd/system/bibman.service.d/override.conf
+# (chmod 600, never in git), e.g.:
+#   [Service]
+#   Environment=DB_PATH=/home/bibman/bibman.db
+#   Environment=LIBRARY_NAME=MyLibrary
+#   Environment=SESSION_SECRET=...      # openssl rand -hex 24
+#   Environment=GAS_CREDENTIAL=...      # openssl rand -hex 16 (the same value goes in every Apps Script project's
+#                                       #   GAS_CREDENTIAL property); the service refuses to start without it
+# The read-only export key for gooTeX, EXPORT_CREDENTIAL, has its own drop-in, export-credential.conf (see DEPLOY.md).
 # ADS and Gemini keys are NOT set here: Apps Script sends them with each request (bring-your-own-key).
 [Unit]
 Description=BibMan
@@ -10,20 +16,13 @@ After=network.target
 
 [Service]
 User=bibman
-WorkingDirectory=/home/bibman/bibman
+WorkingDirectory=/home/bibman/bibman/cloud
 ExecStart=/home/bibman/bibman/venv/bin/gunicorn \
     bibman_e2micro_server:app \
     --bind 127.0.0.1:8081 \
     --workers 1 \
     --timeout 600
 Restart=always
-
-Environment=DB_PATH=/home/bibman/bibman.db
-Environment=LIBRARY_NAME=MyLibrary
-Environment=SESSION_SECRET=REPLACE_ME
-Environment=GAS_CREDENTIAL=REPLACE_ME
-# Optional: read-only key for bibliography export only (give this one to gooTeX, never GAS_CREDENTIAL)
-#Environment=EXPORT_CREDENTIAL=REPLACE_ME
 
 [Install]
 WantedBy=multi-user.target
