@@ -34,6 +34,9 @@ list (and the title, where it is damaged too) from NASA ADS, as plain UTF-8, whi
      --include (to take ADS's value) or given a value with --fix.
        ADS_TOKEN=... python bibman_repair_accents.py authors --out /tmp/accent_repair
      --fix may also name papers that are not in the plan, and may give a "journal".
+  J. journals (13 Nov 2026): papers whose journal is a macro the journal classes don't define (\\an, \\afz, \\sci, ...;
+     the old spreadsheet's matching gave many the wrong one) get their journal from ADS, stored as Core 17 stores it.
+       ADS_TOKEN=... python bibman_repair_accents.py journals --out /tmp/accent_repair
   3. undo, if ever needed: puts back exactly the values saved in an undo file.
        python bibman_repair_accents.py undo --undo /tmp/accent_repair/undo-<time>.json
 
@@ -68,10 +71,10 @@ def names_from_latex(s):
 
 def ads_lookup(session, token, bibcode, doi):
     """ADS's record for a paper, by bibcode (its own or an older one, such as the arXiv bibcode it had before it was
-    published), else by DOI: {bibcode, author, title} or None."""
+    published), else by DOI: {bibcode, author, title, pub} or None."""
     for q in ([f'identifier:"{bibcode}"'] if bibcode else []) + ([f'doi:"{doi}"'] if doi else []):
         for attempt in range(3):
-            r = session.get(ADS_URL, params={'q': q, 'fl': 'bibcode,author,title', 'rows': 1},
+            r = session.get(ADS_URL, params={'q': q, 'fl': 'bibcode,author,title,pub', 'rows': 1},
                             headers={'Authorization': f'Bearer {token}'}, timeout=20)
             if r.status_code == 429:
                 time.sleep(5 * (attempt + 1)); continue
@@ -530,6 +533,124 @@ correctly; if one is a group, give the paper its author list with that name in b
     with open(path, 'w', encoding='utf-8') as f:
         f.write(doc)
 
+# Core's JOURNAL_PATTERNS and journalForStorage (Core 17), for journals from ADS: the macro when the journal classes
+# define it, otherwise the journal's name. Keep in step with Code.gs.
+JOURNAL_PATTERNS = [(re.compile(p, re.IGNORECASE), m) for p, m in [
+    (r'^(?:the\s+)?a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?)?)?)?)?)?)\s+j(?:o(?:u(?:r(?:n(?:a(?:l)?)?)?)?)?)?\s+s(?:u(?:p(?:p(?:l(?:e(?:m(?:e(?:n(?:t)?)?)?)?)?)?)?)?)?', '\\apjs'),
+    (r'^\\?apjs$', '\\apjs'),
+    (r'^(?:the\s+)?a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?)?)?)?)?)?)\s+j(?:o(?:u(?:r(?:n(?:a(?:l)?)?)?)?)?)?\s+l(?:e(?:t(?:t(?:e(?:r(?:s?)?)?)?)?)?)?', '\\apjl'),
+    (r'^\\?apjl$', '\\apjl'),
+    (r'^(?:the\s+)?a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?)?)?)?)?)?)\s+j(?:o(?:u(?:r(?:n(?:a(?:l)?)?)?)?)?)?$', '\\apj'),
+    (r'^\\?apj$', '\\apj'),
+    (r'^(?:the\s+)?a(?:s(?:t(?:r(?:o(?:n(?:o(?:m(?:i(?:c(?:a(?:l)?)?)?)?)?)?)?)?)?)?)\s+j(?:o(?:u(?:r(?:n(?:a(?:l)?)?)?)?)?)?$', '\\aj'),
+    (r'^\\?aj$', '\\aj'),
+    (r'^m(?:o(?:n(?:t(?:h(?:l(?:y)?)?)?)?)?)?\s+n(?:o(?:t(?:i(?:c(?:e(?:s?)?)?)?)?)?)?', '\\mnras'),
+    (r'^\\?mnras$', '\\mnras'),
+    (r'^a(?:s(?:t(?:r(?:o(?:n(?:o(?:m(?:y)?)?)?)?)?)?)?)\s+(?:&|and)\s+a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?)?)?)?)?)?)\s+s(?:u(?:p(?:p?)?)?)?', '\\aaps'),
+    (r'^a(?:s(?:t(?:r(?:o(?:n(?:o(?:m(?:y)?)?)?)?)?)?)?)\s+(?:&|and)\s+a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?)?)?)?)?)?)?$', '\\aap'),
+    (r'^\\?aap?$', '\\aap'),
+    (r'^a(?:n(?:n(?:u(?:a(?:l)?)?)?)?)?\s+r(?:e(?:v(?:i(?:e(?:w)?)?)?)?)?\s+.*a(?:s(?:t(?:r(?:o(?:n?)?)?)?)?)?', '\\araa'),
+    (r'^\\?araa$', '\\araa'),
+    (r'^p(?:u(?:b(?:l(?:i(?:c(?:a(?:t(?:i(?:o(?:n(?:s?)?)?)?)?)?)?)?)?)?)?)\s+.*p(?:a(?:c(?:i(?:f(?:i(?:c?)?)?)?)?)?)?$', '\\pasp'),
+    (r'^\\?pasp$', '\\pasp'),
+    (r'^p(?:u(?:b(?:l(?:i(?:c(?:a(?:t(?:i(?:o(?:n(?:s?)?)?)?)?)?)?)?)?)?)?)\s+.*j(?:a(?:p(?:a(?:n?)?)?)?)?$', '\\pasj'),
+    (r'^\\?pasj$', '\\pasj'),
+    (r'^p(?:u(?:b(?:l(?:i(?:c(?:a(?:t(?:i(?:o(?:n(?:s?)?)?)?)?)?)?)?)?)?)?)\s+.*a(?:u(?:s(?:t(?:r(?:a(?:l(?:i(?:a?)?)?)?)?)?)?)?)?$', '\\pasa'),
+    (r'^\\?pasa$', '\\pasa'),
+    (r'^nat(?:ure)?\s+astron', '\\nat'),
+    (r'^nat(?:ure)?$', '\\nat'),
+    (r'^sci(?:ence)?$', '\\sci'),
+    (r'^ic(?:a(?:r(?:u(?:s)?)?)?)?$', '\\icar'),
+    (r'^sp(?:a(?:c(?:e)?)?)?\s+sci(?:ence)?\s+rev', '\\ssr'),
+    (r'^\\?ssr$', '\\ssr'),
+    (r'^sol(?:ar)?\s+ph(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?$', '\\solphys'),
+    (r'^a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?)?)?)?)?)?)\s+(?:&|and)\s+sp(?:a(?:c(?:e?)?)?)?\s+sci(?:ence)?$', '\\apss'),
+    (r'^\\?apss$', '\\apss'),
+    (r'^ph(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?\s+r(?:e(?:v(?:i(?:e(?:w)?)?)?)?)?\s+l(?:e(?:t(?:t)?)?)?', '\\prl'),
+    (r'^\\?prl$', '\\prl'),
+    (r'^ph(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?\s+r(?:e(?:v(?:i(?:e(?:w)?)?)?)?)?\s+d$', '\\prd'),
+    (r'^\\?prd$', '\\prd'),
+    (r'^j(?:o(?:u(?:r(?:n(?:a(?:l)?)?)?)?)?)?\s+.*c(?:o(?:s(?:m(?:o(?:l?)?)?)?)?)?.*\s+ph(?:y(?:s?)?)?', '\\jcap'),
+    (r'^\\?jcap$', '\\jcap'),
+    (r'^pl(?:a(?:n(?:e(?:t(?:a(?:r(?:y)?)?)?)?)?)?)?\s+.*\s+sp(?:a(?:c(?:e?)?)?)?', '\\planss'),
+    (r'^a(?:s(?:t(?:r(?:o(?:n(?:o(?:m(?:y)?)?)?)?)?)?)?)\s+.*\s+comp(?:u(?:t(?:i(?:n(?:g?)?)?)?)?)?', '\\aac'),
+    (r'^ar[xX]iv', None),
+]]
+JOURNAL_STORED = {'\\sci': 'Science', '\\icar': '\\icarus', '\\aac': 'Astronomy and Computing'}
+
+def journal_for_storage(journal):
+    s = re.sub(r'[{}]', '', (journal or '').strip()).strip()
+    if not s.startswith('\\'):
+        for rx, macro in JOURNAL_PATTERNS:
+            if rx.search(s):
+                s = macro or s
+                break
+    return JOURNAL_STORED.get(s, s)
+
+# ── Journals (13 Nov 2026) ─────────────────────────────────────────────────────────────────────────────────────────────
+DEFINED_JOURNAL_MACROS = set('''aj actaa araa apj apjl apjs ao apss aap aapr aaps azh baas bac caa cjaa icarus jcap jrasc
+    memras mnras na nar pasa pra prb prc prd pre prl pasp pasj qjras rmxaa skytel solphys sovast ssr zap nat iaucirc
+    aplett apspr fcp gca grl jcp jgr jqsrt memsai nphysa physrep physscr planss procspie'''.split())
+
+def journals_pass(args):
+    """Papers whose journal is a macro the journal classes don't define (\\an, \\afz, \\sci, ...): the old spreadsheet's
+    matching gave many of them the wrong one. Each gets its journal from ADS, stored as Core 17 stores it."""
+    token = os.environ.get('ADS_TOKEN', '').strip()
+    if not token:
+        sys.exit('Set ADS_TOKEN first (your NASA ADS API token).')
+    import requests
+    os.makedirs(args.out, exist_ok=True)
+    conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True); conn.row_factory = sqlite3.Row
+    rows = conn.execute("""SELECT p.id, p.bibkey, p.bibcode, p.doi, p.authors, p.title, p.journal, l.name AS library
+                             FROM papers p LEFT JOIN libraries l ON l.id = p.library_id ORDER BY p.bibkey""").fetchall()
+    conn.close()
+    todo = [r for r in rows if re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal'] or '')
+            and re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal']).group(1) not in DEFINED_JOURNAL_MACROS]
+    print(f'{len(todo)} papers with a journal macro the journal classes don\'t define; asking ADS ...')
+    plan, session = [], requests.Session()
+    for r in todo:
+        item = {'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'bibcode': r['bibcode'] or '',
+                'doi': r['doi'] or '', 'authors_before': r['authors'] or '', 'title_before': r['title'] or '',
+                'journal_before': r['journal'] or '', 'authors_after': None, 'title_after': None,
+                'journal_after': None, 'notes': []}
+        try:
+            doc = ads_lookup(session, token, r['bibcode'], r['doi'])
+        except Exception as e:
+            doc = None; item['notes'].append(f'ADS could not be asked: {e}')
+        if doc and doc.get('pub'):
+            item['journal_after'] = journal_for_storage(clean_text(doc['pub']))
+            item['notes'].append(f"ADS: {doc['pub']} ({doc.get('bibcode', '')})")
+            item['category'] = 'journal'
+        else:
+            item['notes'].append('not found on ADS')
+            item['category'] = 'check'
+        plan.append(item)
+        time.sleep(0.15)
+    with open(os.path.join(args.out, 'journals-plan.json'), 'w', encoding='utf-8') as f:
+        json.dump({'made': datetime.now(timezone.utc).isoformat(), 'db': DB_PATH, 'papers': plan}, f,
+                  ensure_ascii=False, indent=1)
+    esc = lambda t: html.escape(t or '')
+    row = lambda p: (f"<tr><td><b>{esc(p['bibkey'])}</b><br><small>{esc(p['library'])}<br>{esc(p['bibcode'] or p['doi'])}"
+                     f"</small></td><td class=b>{esc(p['journal_before'])}</td><td class=a>"
+                     f"{esc(p['journal_after']) if p['journal_after'] is not None else '<i>unchanged</i>'}</td>"
+                     f"<td>{esc('; '.join(p['notes']))}</td></tr>")
+    head = '<tr><th>Paper</th><th>Journal now</th><th>After</th><th>Notes</th></tr>'
+    part = lambda k: [p for p in plan if p['category'] == k]
+    with open(os.path.join(args.out, 'journals-report.html'), 'w', encoding='utf-8') as f:
+        f.write(f"""<!doctype html><meta charset="utf-8"><title>BibMan journal report</title>
+<style>body{{font-family:sans-serif;font-size:13px;margin:16px}}table{{border-collapse:collapse;width:100%}}
+td,th{{border:1px solid #ccc;padding:4px 6px;vertical-align:top;text-align:left}}.b{{background:#fff3f3}}.a{{background:#f1fff1}}
+small{{color:#666}}</style>
+<h2>BibMan journals: report only (nothing was changed)</h2>
+<p>Made {esc(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}. Journals from ADS are stored as Core 17 stores them:
+the macro when the journal classes define it, otherwise the name.</p>
+<h3>Not found on ADS: {len(part('check'))} papers (changed only with --fix)</h3>
+<table>{head}{''.join(row(p) for p in part('check'))}</table>
+<h3>Journal from ADS: {len(part('journal'))} papers (put in by "apply", except those you name with --skip)</h3>
+<table>{head}{''.join(row(p) for p in part('journal'))}</table>""")
+    print(f"journal from ADS: {len(part('journal'))}; not found on ADS (your decision): {len(part('check'))}")
+    print(f"written: {args.out}/journals-report.html and {args.out}/journals-plan.json (nothing in the database was changed)")
+
 def apply(args):
     with open(args.plan, encoding='utf-8') as f:
         plan = json.load(f)['papers']
@@ -560,7 +681,8 @@ def apply(args):
             include.add(p['bibkey'])
     todo = [p for p in plan if any(p.get(f'{f}_after') is not None for f in ('authors', 'title', 'journal'))
             and p['bibkey'] not in skip
-            and (p['category'] in ('damaged', 'latex', 'title', 'authors', 'others', 'groups') or p['bibkey'] in include)]
+            and (p['category'] in ('damaged', 'latex', 'title', 'authors', 'others', 'groups', 'journal')
+                 or p['bibkey'] in include)]
     undo, changed, stale = [], 0, []
     for p in todo:
         r = conn.execute('SELECT authors, title, journal FROM papers WHERE id=?', (p['id'],)).fetchone()
@@ -609,5 +731,7 @@ if __name__ == '__main__':
     c = sub.add_parser('undo');   c.add_argument('--undo', required=True)
     d = sub.add_parser('titles'); d.add_argument('--out', default='/tmp/accent_repair')
     e = sub.add_parser('authors'); e.add_argument('--out', default='/tmp/accent_repair')
+    g = sub.add_parser('journals'); g.add_argument('--out', default='/tmp/accent_repair')
     args = ap.parse_args()
-    {'report': report, 'apply': apply, 'undo': undo, 'titles': titles, 'authors': authors_pass}[args.cmd](args)
+    {'report': report, 'apply': apply, 'undo': undo, 'titles': titles, 'authors': authors_pass,
+     'journals': journals_pass}[args.cmd](args)

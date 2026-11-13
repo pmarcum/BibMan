@@ -1,5 +1,12 @@
 # Changelog
 
+## 13 November 2026 (later): journals (Core 17)
+
+- **Journal macros the journal classes don't define are exported as names** (`\rmp` → Reviews of Modern Physics, `\sci` → Science, ...); they stopped the compile in AASTeX documents.
+- **Core 17 stores a journal as a macro only when AASTeX defines it**: *Science* and *Astronomy and Computing* by name, *Icarus* as `\icarus` (not `\icar`). "Astrophysics and Space Science Proceedings" (a book series) is no longer taken for Ap&SS. Keys are made as before.
+- **The repair script's `journals` pass** gives papers stored with such a macro their journal from ADS: the old spreadsheet's matching had filed many under the wrong one (`\an`, `\afz`, `\sci`).
+- Core 17 (Dashboard 21, Capture 17: select Core 17 and redeploy; their `Code.gs` is unchanged), and the server.
+
 ## 13 November 2026: author lists, group names, & # % and stored entries in the exports (Core 16)
 
 - **Every author is stored; the exports BibTeX reads write the first 15 and `and others`.** The old endings `, et al.` (from the old spreadsheet, which cut lists to 10) and `and et al.` (from the accent repair) are written as `and others`, which styles print as "et al."; BibTeX misread both.

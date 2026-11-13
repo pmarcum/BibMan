@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 16,
-  "bibman_frontend_thinclient_webapp_version": 20,
-  "bibman_bookmarklet_capture_webapp_version": 16,
-  "bibman_core_library_notes": "v16: group names from ADS (no comma, e.g. Gaia Collaboration) stored in braces, {Gaia Collaboration}, so BibTeX keeps them whole. In each web app: Libraries → BibManCore → select version 16, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v20: select Core 16 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v16: select Core 16 and redeploy (Code.gs unchanged)"
+  "bibman_core_library_version": 17,
+  "bibman_frontend_thinclient_webapp_version": 21,
+  "bibman_bookmarklet_capture_webapp_version": 17,
+  "bibman_core_library_notes": "v17: journals stored as a macro only when the journal classes define it (Science, Icarus as \\icarus, Astronomy and Computing by name); keys unchanged. In each web app: Libraries → BibManCore → select version 17, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v21: select Core 17 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v17: select Core 17 and redeploy (Code.gs unchanged)"
 }

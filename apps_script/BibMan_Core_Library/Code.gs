@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 16;
+const BIBMAN_CORE_LIBRARY_VERSION = 17;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -861,7 +861,7 @@ function _adsDocToPaper(doc) {
     title:       title,
     authors:     authorsStored,
     year:        String(doc.year || ''),
-    journal:     journal,
+    journal:     journalForStorage(journal),
     volume:      vol,
     pages:       pages,
     doi:         doi,
@@ -923,8 +923,8 @@ const JOURNAL_PATTERNS = [
   [/^\\?ssr$/i, '\\ssr'],
   // ── Solar Physics ────────────────────────────────────────────────────────
   [/^sol(?:ar)?\s+ph(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?$/i, '\\solphys'],
-  // ── Astrophysics and Space Science ───────────────────────────────────────
-  [/^a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?)?)?)?)?)?)\s+(?:&|and)\s+sp(?:a(?:c(?:e?)?)?)?\s+sci(?:ence)?/i, '\\apss'],
+  // ── Astrophysics and Space Science (not "... Proceedings", a book series; Core 17) ──────
+  [/^a(?:s(?:t(?:r(?:o(?:p(?:h(?:y(?:s(?:i(?:c(?:s?)?)?)?)?)?)?)?)?)?)?)\s+(?:&|and)\s+sp(?:a(?:c(?:e?)?)?)?\s+sci(?:ence)?$/i, '\\apss'],
   [/^\\?apss$/i, '\\apss'],
   // ── Physical Review Letters ───────────────────────────────────────────────
   [/^ph(?:y(?:s(?:i(?:c(?:a(?:l)?)?)?)?)?)?\s+r(?:e(?:v(?:i(?:e(?:w)?)?)?)?)?\s+l(?:e(?:t(?:t)?)?)?/i, '\\prl'],
@@ -942,6 +942,17 @@ const JOURNAL_PATTERNS = [
   // ── arXiv — no macro, return as-is ───────────────────────────────────────
   [/^ar[xX]iv/i, null],
 ];
+/**
+ * journalForStorage: the journal as BibMan stores it (Core 17): the macro from normalizeJournalToMacro when AASTeX (and
+ * the MNRAS and A&A classes) define it, otherwise the journal's name, since a macro the document doesn't define stops
+ * the compile. Keys are still made from normalizeJournalToMacro, so they don't change.
+ */
+const JOURNAL_STORED = { '\\sci': 'Science', '\\icar': '\\icarus', '\\aac': 'Astronomy and Computing' };
+function journalForStorage(journal) {
+  const j = normalizeJournalToMacro(journal);
+  return Object.prototype.hasOwnProperty.call(JOURNAL_STORED, j) ? JOURNAL_STORED[j] : j;
+}
+
 function normalizeJournalToMacro(journal) {
   if (!journal) return journal;
   const s = journal.trim().replace(/[{}]/g, '').trim();
@@ -1296,7 +1307,7 @@ function getIngestStatus(config, paperId)      { return apiCall(config, 'GET',  
 function rerunIngest(config, paperId)          { return apiCall(config, 'POST',   `/api/papers/${paperId}/rerun-ingest`); }
 function bulkReextract(config, all, library)   { return apiCall(config, 'POST',   '/api/papers/bulk-reextract', { all: !!all, library: library || '' }); }
 function addPaperManual(config, data) {
-  if (data.journal) data.journal = normalizeJournalToMacro(data.journal);
+  if (data.journal) data.journal = journalForStorage(data.journal);
   return apiCall(config, 'POST', '/api/papers/add-manual', data);
 }
 function importBib(config, bibContent, library) { return apiCall(config, 'POST', '/api/papers/import-bib', { bib_content: bibContent, library: library || '' }); }
@@ -1544,7 +1555,7 @@ function _captureSave_(config, data, who, library, allowedTagIds) {
       title:       (data.title    || '').trim(),
       authors:     (data.authors  || '').trim(),
       year:        String(data.year || '').trim(),
-      journal:     normalizeJournalToMacro(data.journal || ''),
+      journal:     journalForStorage(data.journal || ''),
       volume:      (data.volume   || '').trim(),
       pages:       (data.pages    || '').trim(),
       doi:         (data.doi      || '').trim(),

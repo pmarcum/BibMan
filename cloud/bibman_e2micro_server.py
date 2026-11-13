@@ -1951,7 +1951,7 @@ def get_bib():
             entry.append(f'  author  = {{{_bib_authors(row["authors"] or "Unknown", as_latex)}}},')
             entry.append(f'  title   = {_bib_title(row["title"] or "Unknown", as_latex)},')
             if row['year']:    entry.append(f'  year    = {{{row["year"]}}},')
-            if row['journal']: entry.append(f'  journal = {{{row["journal"]}}},')
+            if row['journal']: entry.append(f'  journal = {{{_bib_journal(row["journal"], as_latex)}}},')
             if row['volume']:  entry.append(f'  volume  = {{{row["volume"]}}},')
             if row['pages']:   entry.append(f'  pages   = {{{row["pages"]}}},')
             if row['doi']:     entry.append(f'  doi     = {{{row["doi"]}}},')
@@ -2005,6 +2005,24 @@ def _bib_value_end(text, i):
     m = re.compile(r'[^,}\s]*').match(text, i)
     return m.end()
 
+# Journal macros the AASTeX, MNRAS and A&A classes define (13 Nov 2026). In the exports BibTeX reads, a journal stored
+# as any other macro is written as its name (JOURNAL_NAMES), because a macro the document doesn't define stops the
+# compile; one not in JOURNAL_NAMES either stays as it is. Core 17 stores only these macros, or the journal's name.
+DEFINED_JOURNAL_MACROS = set('''aj actaa araa apj apjl apjs ao apss aap aapr aaps azh baas bac caa cjaa icarus jcap jrasc
+    memras mnras na nar pasa pra prb prc prd pre prl pasp pasj qjras rmxaa skytel solphys sovast ssr zap nat iaucirc
+    aplett apspr fcp gca grl jcp jgr jqsrt memsai nphysa physrep physscr planss procspie'''.split())
+JOURNAL_NAMES = {'an': 'Astronomische Nachrichten', 'afz': 'Astrofizika', 'sci': 'Science', 'arep': 'Astronomy Reports',
+                 'aac': 'Astronomy and Computing', 'rmp': 'Reviews of Modern Physics', 'icar': 'Icarus',
+                 'asr': 'Advances in Space Research',
+                 'jaavso': 'Journal of the American Association of Variable Star Observers'}
+
+def _bib_journal(journal, for_bibtex):
+    """A journal as written in an export, as described above."""
+    m = re.fullmatch(r'\s*\\([A-Za-z]+)\s*', journal or '')
+    if not for_bibtex or not m or m.group(1) in DEFINED_JOURNAL_MACROS:
+        return journal
+    return JOURNAL_NAMES.get(m.group(1), journal)
+
 def _bib_title(title, for_bibtex):
     """A title as a BibTeX field value. For the exports BibTeX reads (for_bibtex), inside a second pair of braces, as ADS
     writes them, so styles that change a title's capitals (M$_*$, SAURON, H II) leave it as it is (12 Nov 2026)."""
@@ -2047,9 +2065,10 @@ def _stored_entry(row, for_bibtex):
         v = str(row[col]).strip() if row[col] is not None else ''
         if not v:
             continue
-        if name == 'author':  v = '{' + _bib_authors(v, for_bibtex) + '}'
-        elif name == 'title': v = _bib_title(v, for_bibtex)
-        else:                 v = '{' + v + '}'
+        if name == 'author':    v = '{' + _bib_authors(v, for_bibtex) + '}'
+        elif name == 'title':   v = _bib_title(v, for_bibtex)
+        elif name == 'journal': v = '{' + _bib_journal(v, for_bibtex) + '}'
+        else:                   v = '{' + v + '}'
         entry = _bib_set_field(entry, name, v)
     return entry
 
@@ -4692,7 +4711,7 @@ def export_bib():
             if r['authors']: lines.append(f'  author  = {{{_bib_authors(r["authors"], True)}}},')
             if r['title']:   lines.append(f'  title   = {_bib_title(r["title"], True)},')
             if r['year']:    lines.append(f'  year    = {{{r["year"]}}},')
-            if r['journal']: lines.append(f'  journal = {{{r["journal"]}}},')
+            if r['journal']: lines.append(f'  journal = {{{_bib_journal(r["journal"], True)}}},')
             if r['volume']:  lines.append(f'  volume  = {{{r["volume"]}}},')
             if r['pages']:   lines.append(f'  pages   = {{{r["pages"]}}},')
             if r['doi']:     lines.append(f'  doi     = {{{r["doi"]}}},')
