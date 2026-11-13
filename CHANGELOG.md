@@ -105,7 +105,7 @@
 - **Deleting a label everywhere needs its name typed.** The ✕ in the sidebar Tags list opens a box saying the label will be taken off every paper and every note that has it, in all libraries, and can't be undone; *Delete everywhere* only works once the label's name has been typed (capitals and spaces at the ends don't matter). The hover text on ✎ and ✕ there now says they act everywhere.
 - **Paper tags and note tags shown apart.** The tag strip above the annotations in paper view has two lines: *Paper:* for tags on the paper as a whole, and *In notes:* for tags on highlights and notes, each label once with the number of notes that have it (e.g. *TCAN26 ×2*). Hovering shows who applied it.
 - **The ✕ on a note says what it deletes:** *Delete this highlight and its note*, or *Delete this paper note* (it said only *Delete*), and so does the question before deleting.
-- **Brighter counts in the left sidebar** (All Papers, Key Paper, Notes, Highlights, Pinned, Follow-up): they were nearly the colour of the background; now the same colour as their label, brightening with it on hover and turning blue with it when selected.
+- **Brighter counts in the left sidebar** (All Papers, Key Paper, Notes, Highlights, Pinned, Follow-up): they were nearly the color of the background; now the same color as their label, brightening with it on hover and turning blue with it when selected.
 - **Key Paper is marked when selected** in the left sidebar, like the other filters (it filtered correctly but its row never turned blue).
 - **Fixed: clicking elsewhere while a highlight was saving** gave an error ("Cannot read properties of null"): the highlight was saved but did not appear in the list until the page was reloaded. The save now keeps its own copy of the selected text and paper.
 - **Tag pickers respond at once.** Clicking a label ticks or unticks it immediately (dimmed until saved) and the picker stays open, so several labels can be picked in a row; before, nothing visible happened until it closed by itself. If a save fails, the tick goes back and a message says why. The library list and tag strip refresh once, just after the last click.
@@ -156,14 +156,14 @@
 
 - **Marks are personal, like tags.** Each person has their own Key paper, Pinned and Follow-up marks, on papers and on notes. **Just me** shows yours; **Everyone** shows everyone's, with yours filled and others' faint. Clearing your mark never touches anyone else's.
 - **Marks on notes now count for the paper.** A paper appears under Key paper / Pinned / Follow-up (list icon, counts, filters) when the paper or one of its notes carries that mark. Before, marks on notes were ignored there.
-- **Marking a colleague's note adopts it:** with **Just me** on, you see it alongside your own notes (labelled with its author), and it counts for your note icons and searches.
+- **Marking a colleague's note adopts it:** with **Just me** on, you see it alongside your own notes (labeled with its author), and it counts for your note icons and searches.
 - Existing marks were copied to their owner by `cloud/bibman_personal_marks.py`; the old shared columns are kept as a backup.
 - **Venn Search finds words that appear only in notes.** A search whose words matched notes but no paper text used to return nothing.
 
 ## 29 October 2026: much faster Venn Search
 
 - **Large Venn Searches are several times faster** (for example, "galaxy" + "hot gas": about 4 minutes before, about 1 minute after, from a cold start). The step that decides each result's "~ synonym" / "~ semantic" badge, and the exclude step, asked the database "which of these results contain this word?" in a form that made it read every passage in the library containing the word (minutes on a standard disk). They now read only the keyword index and compare in memory. Results are unchanged (checked old against new on a test library). Cost: a few tens of MB of memory during a large search.
-- **Timed-out and cancelled searches stop on the server** instead of running on in the background (Core 5).
+- **Timed-out and canceled searches stop on the server** instead of running on in the background (Core 5).
 - Versions: Core library 5, Frontend web app 8, Capture web app 4.
 
 ## 28 October 2026: Venn Search through Apps Script

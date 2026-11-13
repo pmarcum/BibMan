@@ -55,7 +55,7 @@ import unicodedata
 from pylatexenc.latexencode import UnicodeToLatexEncoder, UnicodeToLatexConversionRule, RULE_DICT
 from pylatexenc.latex2text import LatexNodes2Text
 
-# ── Astronomy text normalisation ──────────────────────────────────────────────
+# ── Astronomy text normalization ──────────────────────────────────────────────
 try:
     from bibman_normalize import normalize_for_db
 except ImportError:
@@ -2693,7 +2693,7 @@ def get_paper(paper_id):
         for api in NOTE_MARKS:
             d[api] = nm.get('mine', {}).get(api, 0)
             d['others_' + api] = nm.get('others', {}).get(api, 0) if everyone else 0
-        # Normalise text fields: old schema uses user_note, new uses text
+        # Normalize text fields: old schema uses user_note, new uses text
         d['display_text'] = d.get('user_note') or d.get('text') or ''
         d['quote']        = d.get('quote') or ''
         # Parse coords JSON — two possible formats:
@@ -3952,7 +3952,7 @@ def _duration_text(seconds):
 # dashboard's, which receives the limit as max_seconds with each job. Change the limit only above.
 VENN_TIMEOUT_MSG = (f'This search took longer than {_duration_text(VENN_JOB_MAX_SECONDS)} and was stopped. '
                     'Try fewer or more specific search terms, or a lower Max results.')
-VENN_CANCEL_MSG  = 'Search cancelled.'
+VENN_CANCEL_MSG  = 'Search canceled.'
 
 class _StoppableConn:
     """Wraps a database connection so a stopped job's next query fails at once (and the running one is

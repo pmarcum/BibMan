@@ -10,7 +10,7 @@ It answers, from your real data:
   1. how many passages lack a search ID, and whether they already have embeddings;
   2. whether the search-ID formula matches every existing ID (so new IDs will be consistent);
   3. which method built the live index (compared vector by vector);
-  4. how well each compression method finds true nearest neighbours on a sample of your library;
+  4. how well each compression method finds true nearest neighbors on a sample of your library;
   5. disk space and memory available for a rebuild.
 """
 import os, sys, sqlite3, shutil, struct, time
@@ -31,8 +31,8 @@ t0   = time.time()
 def search_id(passage_uuid): return int(passage_uuid.replace('-', '')[:15], 16)   # April 2026 rule
 def vec(blob): return np.frombuffer(blob, dtype=np.float32)[:DIM].astype(np.float32)
 METHODS = {   # how a 768-dim float vector becomes the int8 vector stored in the index
-    'A live-style  (x127, no normalising)': lambda v: (v * 127).astype(np.int8),
-    'B normalise, then x127':               lambda v: np.clip(v / np.linalg.norm(v) * 127, -127, 127).astype(np.int8),
+    'A live-style  (x127, no normalizing)': lambda v: (v * 127).astype(np.int8),
+    'B normalize, then x127':               lambda v: np.clip(v / np.linalg.norm(v) * 127, -127, 127).astype(np.int8),
     'C scale each vector to its maximum':   lambda v: np.clip(np.round(v / np.abs(v).max() * 127), -127, 127).astype(np.int8),
 }
 

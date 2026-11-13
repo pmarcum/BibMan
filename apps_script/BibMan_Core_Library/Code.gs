@@ -769,7 +769,7 @@ function addPaperByIdentifier(config, identifier, library) {
 
 /**
  * _adsDocToPaper: Map a raw ADS document to a clean BibMan paper payload.
- * Applies journal macro normalisation here in GAS.
+ * Applies journal macro normalization here in GAS.
  */
 function _adsDocToPaper(doc) {
   const authors     = (doc.author || []).join(' and ');

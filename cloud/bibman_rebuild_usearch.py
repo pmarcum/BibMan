@@ -37,8 +37,8 @@ Safe by design:
 
 Compression method (how each 768-dim float vector becomes int8), recorded per library in the list file so the
 server compresses search queries the same way:
-  A  x127, no normalising           (how the April 2026 index was built)
-  B  normalise, then x127
+  A  x127, no normalizing           (how the April 2026 index was built)
+  B  normalize, then x127
   C  scale each vector to its own maximum, then x127   (default; most precise for cosine search)
 
 Usage (as the bibman user, with BibMan's Python; a full rebuild takes hours on an e2-micro, so run it when nobody
@@ -217,7 +217,7 @@ def install(name: str, lib_id: str, built: Path, vectors: int, method: str, sync
 def build(name: str, lib_id: str) -> str:
     """Build, check and install one library's index. Returns a one-line result.
     The passages are added in a random order (shuffled across the whole library): added one paper after another,
-    the index weaves a poorer web of neighbours among each paper's very similar passages, and searches then stop
+    the index weaves a poorer web of neighbors among each paper's very similar passages, and searches then stop
     short more often (the first per-library Extragalactic build, added paper by paper, failed its check this way).
     To shuffle without holding everything in memory, pass 1 reads the library once and appends each compressed
     passage to one of 64 temporary bucket files chosen at random; pass 2 reads one bucket at a time, shuffles it,

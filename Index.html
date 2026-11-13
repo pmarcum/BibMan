@@ -1421,9 +1421,9 @@ async function deleteLibraryUI() {
     `Type the library name exactly to confirm\n` +
     `(case-sensitive, spaces and punctuation must match):`
   );
-  if (confirm2 === null) { notify('Deletion cancelled', 'info'); return; }
+  if (confirm2 === null) { notify('Deletion canceled', 'info'); return; }
   if (confirm2 !== name) {
-    notify(`Cancelled — "${confirm2}" does not match "${name}"`, 'error', 5000);
+    notify(`Canceled — "${confirm2}" does not match "${name}"`, 'error', 5000);
     return;
   }
   // Show progress
@@ -1977,7 +1977,7 @@ async function renderPdfGrid(doc) {
   // Scroll to target page — venn highlight page takes priority, then zoom-preserved page
   const targetPg = _vennHL?.page_number || _pdfTargetPage || 1;
   _pdfTargetPage = 1;
-  // Initialise text selection (sets up listener on canvas area)
+  // Initialize text selection (sets up listener on canvas area)
   initTextSelection();  // reset after use
   document.getElementById(`pdf-page-${targetPg}`)?.scrollIntoView({behavior:'instant',block:'start'});
   const activeThumb = document.getElementById(`pdf-thumb-${targetPg}`);
@@ -3052,14 +3052,14 @@ function toggleVennFilter(filterType) {
 }
 let _vennAborted = false;
 let _vennJobId = null;   // server job of a search still running (see the loop in runVennSearch)
-let _vennRun = 0;        // increases with every search, so a cancelled one can't overwrite a newer one
+let _vennRun = 0;        // increases with every search, so a canceled one can't overwrite a newer one
 function cancelVennSearch() {
   _vennAborted = true;
   _vennRun++;
   if (_vennJobId) { gas('vennSearchCancel', _vennJobId).catch(() => {}); _vennJobId = null; }
   document.getElementById('btn-venn-search').disabled = false;
   document.getElementById('btn-venn-cancel').style.display = 'none';
-  document.getElementById('upset-pane').innerHTML = '<div class="upset-empty">Search cancelled</div>';
+  document.getElementById('upset-pane').innerHTML = '<div class="upset-empty">Search canceled</div>';
   document.getElementById('results-toolbar').style.display = 'none';
   document.getElementById('upset-results').innerHTML = '';
 }
@@ -4533,7 +4533,7 @@ async function saveSelectionAnnotation() {
   }
   if (!document.getElementById('selection-popup').classList.contains('visible')) document.getElementById('selection-note').value = '';
 }
-// ── Text layer initialisation (called after renderPdfGrid) ───────────────────
+// ── Text layer initialization (called after renderPdfGrid) ───────────────────
 let _selectionListenerActive = false;
 function initTextSelection() {
   if (_selectionListenerActive) return;
@@ -4569,7 +4569,7 @@ function initTextSelection() {
       });
     }
     if (!pageEl) return;
-    // Convert selection bounding boxes to normalised page coords
+    // Convert selection bounding boxes to normalized page coords
     const pageRect = pageEl.getBoundingClientRect();
     const pw = pageRect.width, ph = pageRect.height;
     const rects = [];
