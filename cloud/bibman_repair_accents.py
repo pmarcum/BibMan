@@ -24,10 +24,20 @@ list (and the title, where it is damaged too) from NASA ADS, as plain UTF-8, whi
      then works as above. Titles that differ from ADS's only in LaTeX or symbols are repaired; titles whose words
      differ are changed only when named with --include; papers not found on ADS are only listed.
        ADS_TOKEN=... python bibman_repair_accents.py titles --out /tmp/accent_repair
+  A. authors (13 Nov 2026): the old spreadsheet cut lists of more than 10 authors to 10 names and ", et al.", and the
+     accent repair above wrote "and et al."; BibMan now stores every name (the exports write the first 15 and "and
+     others"). "authors" asks ADS for the full list of each such paper and writes authors-report.html and
+     authors-plan.json. A full list whose first names match the stored ones is put in; one that doesn't match is
+     changed only when named with --include; a paper not on ADS keeps its names, ending in "and others". It also lists,
+     for your decision, author lists BibTeX can't read (a name with nothing after its comma, too many commas), author
+     fields that repeat the title, and HTML left in titles or names (H&alpha): those are changed only when named with
+     --include (to take ADS's value) or given a value with --fix.
+       ADS_TOKEN=... python bibman_repair_accents.py authors --out /tmp/accent_repair
+     --fix may also name papers that are not in the plan, and may give a "journal".
   3. undo, if ever needed: puts back exactly the values saved in an undo file.
        python bibman_repair_accents.py undo --undo /tmp/accent_repair/undo-<time>.json
 
-Author lists keep the first 10 names and then "et al." (as the damaged entries had); titles are replaced only when
+Author lists from ADS keep every name (until 13 Nov 2026, the first 10 and "et al."); titles are replaced only when
 they are damaged themselves. Run as the bibman user, with BibMan's own Python (it needs only requests).
 """
 import argparse, html, json, os, re, sqlite3, sys, time, unicodedata
@@ -35,7 +45,6 @@ from datetime import datetime, timezone
 
 DB_PATH        = os.environ.get('DB_PATH', '/home/bibman/bibman.db')
 ADS_URL        = 'https://api.adsabs.harvard.edu/v1/search/query'
-MAX_AUTHORS    = 10
 DAMAGE         = re.compile('[̀-ͯ´¨˜ˆˇ˘˙˚˛]|\\\\[^\\x00-\\x7f]')
 DOTLESS_I      = re.compile('ı')
 _DOTLESS_ACC   = re.compile('ı([̀-ͯ])')
@@ -75,9 +84,11 @@ def ads_lookup(session, token, bibcode, doi):
     return None
 
 def ads_authors(names):
+    """ADS's author list as BibMan stores it: every name, plain UTF-8, joined with "and" (as Core does). ADS writes every
+    person as "Last, First", so a name of several words without a comma is a group: it is kept in braces, {Gaia
+    Collaboration}, so BibTeX keeps it whole (as Core 16 does)."""
     names = [clean_text(n).strip() for n in names or [] if n and n.strip()]
-    text = ' and '.join(names[:MAX_AUTHORS])
-    return text + (' and et al.' if len(names) > MAX_AUTHORS else '')
+    return ' and '.join('{' + n + '}' if ',' not in n and ' ' in n and not n.startswith('{') else n for n in names)
 
 ADS_EXPORT_URL = 'https://api.adsabs.harvard.edu/v1/export/bibtex'
 MIGRATED_BEFORE = '2026-04-16'      # papers created before BibMan went live came through the March-April move
@@ -341,7 +352,7 @@ def write_html(plan, path):
 td,th{{border:1px solid #ccc;padding:4px 6px;vertical-align:top;text-align:left}}.b{{background:#fff3f3}}.a{{background:#f1fff1}}
 small{{color:#666}}</style>
 <h2>BibMan accent repair: report only (nothing was changed)</h2>
-<p>Made {esc(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}. Author lists from ADS keep the first {MAX_AUTHORS} names, then "et al.".</p>
+<p>Made {esc(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}. Author lists from ADS keep every name.</p>
 <h3>Damaged: {len(dmg)} papers (repaired by "apply", except those you name with --skip)</h3>
 <table>{head}{rows(dmg)}</table>
 <h3>Only a dotless i: {len(chk)} papers (possibly correct, e.g. Turkish names; changed only if you name them with --include)</h3>
@@ -349,6 +360,173 @@ small{{color:#666}}</style>
 <h3>LaTeX accents: {len(ltx)} author lists written as e.g. C\\^{{o}}t\\'{{e}}, converted to plain UTF-8 with all names kept,
 no ADS needed (changed by "apply", except those you name with --skip)</h3>
 <table>{head}{rows(ltx)}</table>'''
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(doc)
+
+# ── Full author lists (13 Nov 2026) ────────────────────────────────────────────────────────────────────────────────
+CUT_LIST   = re.compile(r'(,\s*|\s+and\s+)(et\.?\s*al\.?|others)\s*$', re.IGNORECASE)
+# A name stored without a comma is usually a person written "First Last", which BibTeX reads correctly; one with one
+# of these words is a group, put in braces so BibTeX keeps it whole
+GROUP_WORD = re.compile(r'\b(collaboration|team|idt|consortium|academies)\b', re.IGNORECASE)
+HTML_LEFT  = re.compile(r'(?<!\\)&(?:[A-Za-z]+;|(?:alpha|beta|gamma|delta|epsilon|zeta|eta|theta|iota|kappa|lambda|mu|nu|'
+                        r'xi|pi|rho|sigma|tau|upsilon|phi|chi|psi|omega)\b)', re.IGNORECASE)
+
+def split_names(s):
+    """An author list split at each "and" outside braces."""
+    names, depth, start = [], 0, 0
+    for m in re.finditer(r'[{}]|\s+and\s+', s or '', re.IGNORECASE):
+        t = m.group(0)
+        if t == '{': depth += 1
+        elif t == '}': depth = max(depth - 1, 0)
+        elif depth == 0:
+            names.append(s[start:m.start()]); start = m.end()
+    names.append((s or '')[start:])
+    return [n.strip() for n in names if n.strip()]
+
+def _commas(name):
+    depth = n = 0
+    for ch in name:
+        if ch == '{': depth += 1
+        elif ch == '}': depth = max(depth - 1, 0)
+        elif ch == ',' and depth == 0: n += 1
+    return n
+
+def _surname(name):
+    t = unicodedata.normalize('NFKD', re.sub(r'[{}\\]', '', name.split(',')[0]))
+    return re.sub(r'[^a-z]', '', ''.join(c for c in t if not unicodedata.combining(c)).lower())
+
+def unreadable(authors):
+    """Why BibTeX can't read an author list properly, or ''."""
+    names = split_names(CUT_LIST.sub('', authors or ''))
+    if any(re.search(r',\s*$', n) for n in names) or re.search(r',\s+and\s', authors or '', re.IGNORECASE):
+        return 'a name with nothing after its comma'
+    if any(_commas(n) > 2 for n in names):
+        return 'a name with more than two commas'
+    return ''
+
+def brace_groups(authors):
+    """The author list with each unbraced name that is a group (see GROUP_WORD) put in braces."""
+    names = split_names(authors)
+    if not any(_commas(n) == 0 and GROUP_WORD.search(n) and not n.startswith('{') for n in names):
+        return authors
+    return ' and '.join('{' + n + '}' if _commas(n) == 0 and GROUP_WORD.search(n) and not n.startswith('{') else n
+                        for n in names)
+
+def no_comma_people(authors):
+    """Names of several words without a comma that are not groups: people written "First Last", left as they are."""
+    return [n for n in split_names(CUT_LIST.sub('', authors or '')) if _commas(n) == 0 and ' ' in n
+            and not n.startswith('{') and not GROUP_WORD.search(n) and not re.fullmatch(r'et\.?\s*al\.?|others', n, re.I)]
+
+def authors_pass(args):
+    token = os.environ.get('ADS_TOKEN', '').strip()
+    if not token:
+        sys.exit('Set ADS_TOKEN first (your NASA ADS API token).')
+    import requests
+    os.makedirs(args.out, exist_ok=True)
+    conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True); conn.row_factory = sqlite3.Row
+    rows = conn.execute("""SELECT p.id, p.bibkey, p.bibcode, p.doi, p.authors, p.title, l.name AS library
+                             FROM papers p LEFT JOIN libraries l ON l.id = p.library_id ORDER BY p.bibkey""").fetchall()
+    conn.close()
+    todo = []
+    for r in rows:
+        why = []
+        if CUT_LIST.search(r['authors'] or ''): why.append('cut')
+        bad = unreadable(r['authors'])
+        if bad: why.append(bad)
+        flat = lambda t: re.sub(r'[\s{}]+', ' ', (t or '').casefold()).strip()
+        if r['authors'] and flat(r['authors']) == flat(r['title']): why.append('the author field repeats the title')
+        if HTML_LEFT.search(r['authors'] or '') or HTML_LEFT.search(r['title'] or ''): why.append('HTML left in it')
+        if brace_groups(r['authors'] or '') != (r['authors'] or ''): why.append('group')
+        if why: todo.append((r, why))
+    people = sorted({(n, r['bibkey']) for r in rows for n in no_comma_people(r['authors'])})
+    plain = lambda w: set(w) <= {'cut', 'group'}
+    print(f'{sum(1 for _, w in todo if plain(w))} cut author lists or group names and '
+          f'{sum(1 for _, w in todo if not plain(w))} for your decision; asking ADS ...')
+    plan, session = [], requests.Session()
+    for n, (r, why) in enumerate(todo, 1):
+        item = {'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'bibcode': r['bibcode'] or '',
+                'doi': r['doi'] or '', 'authors_before': r['authors'] or '', 'title_before': r['title'] or '',
+                'authors_after': None, 'title_after': None, 'notes': [w for w in why if w not in ('cut', 'group')]}
+        if 'cut' not in why:
+            if why == ['group']:                    # only group names to brace: no ADS needed
+                item['authors_after'], item['category'] = brace_groups(r['authors']), 'groups'
+                item['notes'].append('group names put in braces')
+                plan.append(item); continue
+        try:
+            doc = ads_lookup(session, token, r['bibcode'], r['doi'])
+        except Exception as e:
+            doc = None; item['notes'].append(f'ADS could not be asked: {e}')
+        stored = split_names(CUT_LIST.sub('', r['authors'] or ''))
+        if doc and doc.get('author'):
+            full = ads_authors(doc['author'])
+            ads_names = [clean_text(a) for a in doc['author']]
+            same = sum(1 for a, b in zip(stored, ads_names) if _surname(a) == _surname(b))
+            matches = bool(stored) and _surname(stored[0]) == _surname(ads_names[0]) and same >= 0.8 * len(stored)
+            item['authors_after'] = full if full != r['authors'] else None
+            item['notes'].insert(0, f'{len(stored)} names stored, {len(ads_names)} on ADS'
+                                    + ('' if matches else f'; only {same} of the stored names match ADS\'s'))
+            if HTML_LEFT.search(r['title'] or '') and doc.get('title'):
+                item['title_after'] = clean_text(html.unescape(doc['title'][0]))
+            item['category'] = 'authors' if (set(why) <= {'cut', 'group'} and matches) else 'check'
+        else:
+            item['notes'].insert(0, 'not found on ADS')
+            if set(why) <= {'cut', 'group'}:
+                item['authors_after'] = brace_groups(' and '.join(stored + (['others'] if 'cut' in why else [])))
+                item['category'] = 'others' if 'cut' in why else 'groups'
+            else:
+                item['category'] = 'check'
+        plan.append(item)
+        if n % 50 == 0:
+            print(f'  {n}/{len(todo)}')
+        time.sleep(0.15)
+    with open(os.path.join(args.out, 'authors-plan.json'), 'w', encoding='utf-8') as f:
+        json.dump({'made': datetime.now(timezone.utc).isoformat(), 'db': DB_PATH, 'papers': plan}, f,
+                  ensure_ascii=False, indent=1)
+    write_authors_html(plan, os.path.join(args.out, 'authors-report.html'), people)
+    c = lambda k: sum(1 for p in plan if p['category'] == k)
+    print(f"full lists from ADS: {c('authors')}; not on ADS, ending changed to \"and others\": {c('others')}; "
+          f"group names braced: {c('groups')}; for your decision: {c('check')}")
+    print(f"written: {args.out}/authors-report.html and {args.out}/authors-plan.json (nothing in the database was changed)")
+
+def write_authors_html(plan, path, people=()):
+    esc = lambda s: html.escape(s or '')
+    def short(a):
+        names = split_names(a)
+        return ' and '.join(names[:12]) + (f' … ({len(names)} names)' if len(names) > 12 else '')
+    def rows(items):
+        out = []
+        for p in items:
+            for field in ('authors', 'title'):
+                after = p[f'{field}_after']
+                if after is None and field == 'title':
+                    continue
+                before = short(p['authors_before']) if field == 'authors' else p['title_before']
+                shown = (short(after) if field == 'authors' else after) if after is not None else None
+                out.append(f"<tr><td><b>{esc(p['bibkey'])}</b><br><small>{esc(p['library'])}<br>{esc(p['bibcode'] or p['doi'])}</small></td>"
+                           f"<td>{field}</td><td class=b>{esc(before)}</td>"
+                           f"<td class=a>{esc(shown) if shown is not None else '<i>unchanged</i>'}</td>"
+                           f"<td>{esc('; '.join(p['notes']))}</td></tr>")
+        return '\n'.join(out)
+    head = '<tr><th>Paper</th><th>Field</th><th>Now</th><th>After</th><th>Notes</th></tr>'
+    part = lambda k: [p for p in plan if p['category'] == k]
+    doc = f"""<!doctype html><meta charset="utf-8"><title>BibMan author list report</title>
+<style>body{{font-family:sans-serif;font-size:13px;margin:16px}}table{{border-collapse:collapse;width:100%}}
+td,th{{border:1px solid #ccc;padding:4px 6px;vertical-align:top;text-align:left}}.b{{background:#fff3f3}}.a{{background:#f1fff1}}
+small{{color:#666}}</style>
+<h2>BibMan author lists: report only (nothing was changed)</h2>
+<p>Made {esc(datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'))}. Lists longer than 12 names are shortened here
+for reading only; the database gets every name. The exports write the first 15 and "and others".</p>
+<h3>For your decision: {len(part('check'))} papers (changed only if you name them with --include, or give a value with --fix)</h3>
+<table>{head}{rows(part('check'))}</table>
+<h3>Full lists from ADS: {len(part('authors'))} papers (put in by "apply", except those you name with --skip)</h3>
+<table>{head}{rows(part('authors'))}</table>
+<h3>Not on ADS: {len(part('others'))} papers keep their names, ending in "and others"</h3>
+<table>{head}{rows(part('others'))}</table>
+<h3>Group names put in braces: {len(part('groups'))} papers (by "apply", except those you name with --skip)</h3>
+<table>{head}{rows(part('groups'))}</table>
+<h3>Names without a comma left as they are: {len(people)} (people written "First Last", which BibTeX reads
+correctly; if one is a group, give the paper its author list with that name in braces with --fix)</h3>
+<table><tr><th>Name</th><th>Paper</th></tr>{''.join(f'<tr><td>{esc(n)}</td><td>{esc(k)}</td></tr>' for n, k in people)}</table>"""
     with open(path, 'w', encoding='utf-8') as f:
         f.write(doc)
 
@@ -361,24 +539,36 @@ def apply(args):
     if getattr(args, 'fix', None):
         with open(args.fix, encoding='utf-8') as f:
             fixes = json.load(f)
-    unknown = (skip | include | set(fixes)) - {p['bibkey'] for p in plan}
+    unknown = (skip | include) - {p['bibkey'] for p in plan}
     if unknown:
         sys.exit(f'Not in the plan (check the spelling): {", ".join(sorted(unknown))}')
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    in_plan = {p['bibkey'] for p in plan}
+    for key in sorted(set(fixes) - in_plan):        # --fix may also name papers outside the plan (13 Nov 2026)
+        found = conn.execute('SELECT id, authors, title, journal FROM papers WHERE bibkey=?', (key,)).fetchall()
+        if len(found) != 1:
+            sys.exit(f'--fix names {key}, which is {"not in BibMan" if not found else "in several libraries"}')
+        r = found[0]
+        plan.append({'id': r['id'], 'bibkey': key, 'category': 'fix', 'authors_before': r['authors'] or '',
+                     'title_before': r['title'] or '', 'journal_before': r['journal'] or '',
+                     'authors_after': None, 'title_after': None, 'notes': []})
     for p in plan:                                  # corrected values given by hand win over ADS's
-        for field in ('authors', 'title'):
+        for field in ('authors', 'title', 'journal'):
             if field in fixes.get(p['bibkey'], {}):
                 p[f'{field}_after'] = clean_text(fixes[p['bibkey']][field])
         if p['bibkey'] in fixes:
             include.add(p['bibkey'])
-    todo = [p for p in plan if (p['authors_after'] is not None or p['title_after'] is not None)
-            and p['bibkey'] not in skip and (p['category'] in ('damaged', 'latex', 'title') or p['bibkey'] in include)]
-    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    todo = [p for p in plan if any(p.get(f'{f}_after') is not None for f in ('authors', 'title', 'journal'))
+            and p['bibkey'] not in skip
+            and (p['category'] in ('damaged', 'latex', 'title', 'authors', 'others', 'groups') or p['bibkey'] in include)]
     undo, changed, stale = [], 0, []
     for p in todo:
-        r = conn.execute('SELECT authors, title FROM papers WHERE id=?', (p['id'],)).fetchone()
-        if not r or (r['authors'] or '') != p['authors_before'] or (r['title'] or '') != p['title_before']:
+        r = conn.execute('SELECT authors, title, journal FROM papers WHERE id=?', (p['id'],)).fetchone()
+        if not r or (r['authors'] or '') != p['authors_before'] or (r['title'] or '') != p['title_before'] \
+                or ('journal_before' in p and (r['journal'] or '') != p['journal_before']):
             stale.append(p['bibkey']); continue
-        undo.append({'id': p['id'], 'bibkey': p['bibkey'], 'authors': r['authors'], 'title': r['title']})
+        undo.append({'id': p['id'], 'bibkey': p['bibkey'], 'authors': r['authors'], 'title': r['title'],
+                     'journal': r['journal']})
     undo_path = os.path.join(os.path.dirname(os.path.abspath(args.plan)),
                              'undo-' + datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f') + '.json')   # never overwrites one
     with open(undo_path, 'w', encoding='utf-8') as f:           # saved before anything is written
@@ -388,8 +578,9 @@ def apply(args):
         if p['id'] not in keep:
             continue
         sets, vals = [], []
-        if p['authors_after'] is not None: sets.append('authors=?'); vals.append(p['authors_after'])
-        if p['title_after']   is not None: sets.append('title=?');   vals.append(p['title_after'])
+        for field in ('authors', 'title', 'journal'):
+            if p.get(f'{field}_after') is not None:
+                sets.append(f'{field}=?'); vals.append(p[f'{field}_after'])
         conn.execute(f"UPDATE papers SET {', '.join(sets)}, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?",
                      vals + [p['id']])
         changed += 1
@@ -404,8 +595,10 @@ def undo(args):
     conn = sqlite3.connect(DB_PATH)
     for u in saved:
         conn.execute('UPDATE papers SET authors=?, title=? WHERE id=?', (u['authors'], u['title'], u['id']))
+        if 'journal' in u:                          # undo files from 13 Nov 2026 on also keep the journal
+            conn.execute('UPDATE papers SET journal=? WHERE id=?', (u['journal'], u['id']))
     conn.commit(); conn.close()
-    print(f'put back the old authors and titles of {len(saved)} papers')
+    print(f'put back the old authors, titles and journals of {len(saved)} papers')
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -415,5 +608,6 @@ if __name__ == '__main__':
     b.add_argument('--fix')
     c = sub.add_parser('undo');   c.add_argument('--undo', required=True)
     d = sub.add_parser('titles'); d.add_argument('--out', default='/tmp/accent_repair')
+    e = sub.add_parser('authors'); e.add_argument('--out', default='/tmp/accent_repair')
     args = ap.parse_args()
-    {'report': report, 'apply': apply, 'undo': undo, 'titles': titles}[args.cmd](args)
+    {'report': report, 'apply': apply, 'undo': undo, 'titles': titles, 'authors': authors_pass}[args.cmd](args)

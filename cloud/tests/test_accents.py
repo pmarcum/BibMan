@@ -92,7 +92,7 @@ def test_repair_script(server, tmp_path, monkeypatch):
     R.report(type('A', (), {'out': str(out)}))
     plan = {p['bibkey']: p for p in json.load(open(out / 'plan.json'))['papers']}
     assert plan['dmg2019']['category'] == 'damaged'
-    assert plan['dmg2019']['authors_after'] == ' and '.join(f'Author{i}, A.' for i in range(1, 11)) + ' and et al.'
+    assert plan['dmg2019']['authors_after'] == ' and '.join(f'Author{i}, A.' for i in range(1, 12))   # every name (13 Nov 2026)
     assert plan['tur2020']['category'] == 'check' and plan['tur2020']['authors_after'] is None   # same as ADS's
     assert plan['ltx2025']['category'] == 'latex' and plan['ltx2025']['authors_after'] == 'Sola, E. and Côté, P. and Yıldız, M. K. and Müller, O.'
     assert plan['gone2020']['authors_after'] is None and 'not found on ADS' in plan['gone2020']['notes'][0]
@@ -186,7 +186,7 @@ def test_ascii_relations_in_text(server):
     assert v('$M_* > 2$ and $z<1$') == '$M_* > 2$ and $z<1$'                      # math exactly as stored
     assert v(r'z {\ensuremath{<}} 1 and {\ensuremath{\mathrm{a}>b}} > c') == \
         r'z {\ensuremath{<}} 1 and {\ensuremath{\mathrm{a}>b}} {\textgreater} c'    # \ensuremath is math too
-    assert v('Smith & Jones <a>') == r'Smith & Jones {\textless}a{\textgreater}'      # & is a separate problem
+    assert v('Smith & Jones <a>') == r'Smith \& Jones {\textless}a{\textgreater}'
 
 def test_ascii_only_entry_with_relations(server):
     """An entry with no non-ASCII character still gets < > | written as text commands; addresses untouched."""

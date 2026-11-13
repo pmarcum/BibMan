@@ -1942,13 +1942,13 @@ def get_bib():
         if row['bibtex'] and row['bibtex'].strip():
             fixed = re.sub(r'@\w+\{[^,]+,',
                            f'@{pubtype}{{{bibkey},',
-                           row['bibtex'].strip(), count=1, flags=re.IGNORECASE)
+                           _stored_entry(row, as_latex), count=1, flags=re.IGNORECASE)
             if with_tags:
                 fixed = _bib_set_keywords(fixed, tags.get(row['id']))
             lines.append(latex_ascii_entry(fixed) if as_latex else fixed)
         else:
             entry = [f'@{pubtype}{{{bibkey},']
-            entry.append(f'  author  = {{{row["authors"] or "Unknown"}}},')
+            entry.append(f'  author  = {{{_bib_authors(row["authors"] or "Unknown", as_latex)}}},')
             entry.append(f'  title   = {_bib_title(row["title"] or "Unknown", as_latex)},')
             if row['year']:    entry.append(f'  year    = {{{row["year"]}}},')
             if row['journal']: entry.append(f'  journal = {{{row["journal"]}}},')
@@ -2010,6 +2010,49 @@ def _bib_title(title, for_bibtex):
     writes them, so styles that change a title's capitals (M$_*$, SAURON, H II) leave it as it is (12 Nov 2026)."""
     return '{{' + title + '}}' if for_bibtex else '{' + title + '}'
 
+# A paper's stored BibTeX entry (from Import .bib or Edit BibTeX) is exported with its author, title, year, journal,
+# volume, pages and DOI taken from the paper's fields (13 Nov 2026): Dashboard edits and repairs change the fields, so
+# the fields are the truth; every other field of the stored entry (notes, URLs, ...) is kept as it is. A field the
+# paper leaves empty keeps the stored value. Edit BibTeX in turn updates these fields from what is typed.
+_FIELD_COLUMNS = (('author', 'authors'), ('title', 'title'), ('year', 'year'), ('journal', 'journal'),
+                  ('volume', 'volume'), ('pages', 'pages'), ('doi', 'doi'))
+
+def _bib_field_spans(entry):
+    """(name, value start, value end) for each field of an entry, in order."""
+    head = re.match(r'\s*@\w+\s*\{[^,]*,', entry)
+    if not head:
+        return
+    i, field = head.end(), re.compile(r'\s*([A-Za-z][\w:.\-]*)\s*=\s*')
+    while True:
+        m = field.match(entry, i)
+        if not m:
+            return
+        end = _bib_value_end(entry, m.end())
+        yield m.group(1).lower(), m.end(), end
+        i = re.compile(r'\s*,?').match(entry, end).end()
+
+def _bib_set_field(entry, name, value):
+    """The entry with the value of its field `name` (the first, if repeated) replaced by `value`, a complete BibTeX value
+    ({...}); added after the key line if the entry has no such field."""
+    for n, start, end in _bib_field_spans(entry):
+        if n == name:
+            return entry[:start] + value + entry[end:]
+    head = re.match(r'\s*@\w+\s*\{[^,]*,', entry)
+    return entry[:head.end()] + f'\n  {name} = {value},' + entry[head.end():] if head else entry
+
+def _stored_entry(row, for_bibtex):
+    """A paper's stored BibTeX entry with the fields in _FIELD_COLUMNS taken from the paper, as described above."""
+    entry = row['bibtex'].strip()
+    for name, col in _FIELD_COLUMNS:
+        v = str(row[col]).strip() if row[col] is not None else ''
+        if not v:
+            continue
+        if name == 'author':  v = '{' + _bib_authors(v, for_bibtex) + '}'
+        elif name == 'title': v = _bib_title(v, for_bibtex)
+        else:                 v = '{' + v + '}'
+        entry = _bib_set_field(entry, name, v)
+    return entry
+
 def _bib_entries(text):
     """(type, key, fields) for each entry of a .bib file, read brace by brace (12 Nov 2026), so values with braces
     nested to any depth or with an @ in them are read whole; @string, @comment and @preamble are not papers."""
@@ -2024,13 +2067,14 @@ def _bib_entries(text):
             out.append((m.group(1), key.strip(), fields))
     return out
 
-def _bib_field_text(value):
-    """A field value without its outer {...} or "..." and one more pair of braces spanning it all (ADS writes
-    title = "{...}"), spaces collapsed; everything inside kept as written (as Core's bibtexFieldValue)."""
+def _bib_field_text(value, inner=True):
+    """A field value without its outer {...} or "..." and (if inner) one more pair of braces spanning it all (ADS writes
+    title = "{...}"), spaces collapsed; everything inside kept as written (as Core's bibtexFieldValue). Author lists keep
+    that pair (inner=False): there it makes one name of the whole list, {National Academies of Sciences, ...}."""
     v = value.strip()
     if len(v) >= 2 and (v[0], v[-1]) in (('{', '}'), ('"', '"')):
         v = v[1:-1].strip()
-    if v.startswith('{') and v.endswith('}'):
+    if inner and v.startswith('{') and v.endswith('}'):
         depth = 0
         for j, ch in enumerate(v):
             if ch == '{': depth += 1
@@ -2050,7 +2094,8 @@ def _bib_fields(fields_str):
         if not m:
             break
         end = _bib_value_end(fields_str, m.end())
-        out[m.group(1).lower()] = _bib_field_text(fields_str[m.end():end])
+        name = m.group(1).lower()
+        out[name] = _bib_field_text(fields_str[m.end():end], inner=name not in ('author', 'editor'))
         i = max(end, m.end() + 1)
     return out
 
@@ -2096,13 +2141,78 @@ def clean_text(s):
     return unicodedata.normalize('NFC', _DOTLESS_I_ACCENT.sub(lambda m: 'i' + m.group(1), s))
 
 def names_from_latex(s):
-    """Author names written in LaTeX ({Rom{\\'a}n}, Javier) as plain UTF-8 (Román, Javier); others just cleaned."""
+    """Author names written in LaTeX ({Rom{\\'a}n}, Javier) as plain UTF-8 (Román, Javier); others just cleaned. A name
+    in braces as a whole ({National Academies of Sciences, Engineering, and Medicine}) keeps them (13 Nov 2026): they
+    make it one name for BibTeX, and the commas or "and" inside it would otherwise split it."""
     if not s or ('\\' not in s and '{' not in s):
         return clean_text(s)
-    try:
-        return clean_text(_LATEX_TO_TEXT.latex_to_text(s).replace('\u00a0', ' '))
-    except Exception:
-        return clean_text(s)
+    def text(t):
+        try:
+            return clean_text(_LATEX_TO_TEXT.latex_to_text(t).replace('\u00a0', ' '))
+        except Exception:
+            return clean_text(t)
+    names = _bib_split_names(s)
+    if not any(_bib_whole_braced(n) for n in names):
+        return text(s)
+    return ' and '.join('{' + text(n[1:-1]) + '}' if _bib_whole_braced(n) else text(n) for n in names)
+
+def _bib_whole_braced(name):
+    """True for a name inside one pair of braces as a whole: {Gaia Collaboration}, not {Bernardi}, M."""
+    return len(name) > 1 and name[0] == '{' and _bib_value_end(name, 0) == len(name)
+
+def _bib_split_names(s):
+    """An author list split at each "and" outside braces (BibTeX's rule), each name stripped of spaces."""
+    names, depth, start = [], 0, 0
+    for m in re.finditer(r'[{}]|\s+and\s+', s, re.IGNORECASE):
+        t = m.group(0)
+        if t == '{': depth += 1
+        elif t == '}': depth = max(depth - 1, 0)
+        elif depth == 0:
+            names.append(s[start:m.start()]); start = m.end()
+    names.append(s[start:])
+    return [n.strip() for n in names if n.strip()]
+
+# Author lists in the exports BibTeX reads (13 Nov 2026). BibMan stores every name; the export writes the first
+# AUTHOR_LIMIT and then "and others", which bibliography styles print as "et al."; an old ending ", et al." or
+# "and et al." (from the old spreadsheet, or the accent repair) is written the same way. "Last, First, Jr." (as ADS
+# writes it, which BibTeX would print as "Jr. Last, First") becomes BibTeX's "Last, Jr., First". A group name is kept
+# whole by the braces it is stored with ({Gaia Collaboration}); names are never braced here, because "First Last"
+# (Magnus Johannesson) is a person, which BibTeX reads correctly as it is.
+AUTHOR_LIMIT = 15
+_ET_AL      = re.compile(r'^(et\.?\s*al\.?|others)$', re.IGNORECASE)
+_ET_AL_TAIL = re.compile(r',\s*et\.?\s*al\.?\s*$', re.IGNORECASE)
+_JUNIOR     = re.compile(r'^(jr\.?|sr\.?|ii|iii|iv)$', re.IGNORECASE)
+
+def _name_parts(name):
+    """A name's parts between commas outside braces."""
+    parts, depth, start = [], 0, 0
+    for i, ch in enumerate(name):
+        if ch == '{': depth += 1
+        elif ch == '}': depth = max(depth - 1, 0)
+        elif ch == ',' and depth == 0:
+            parts.append(name[start:i].strip()); start = i + 1
+    parts.append(name[start:].strip())
+    return parts
+
+def _bib_authors(authors, for_bibtex):
+    """An author list as written in an export; for those BibTeX reads, as described above."""
+    if not for_bibtex:
+        return authors
+    names, others = [], False
+    for n in _bib_split_names(authors):
+        if _ET_AL.match(n):
+            others = True; continue
+        if _ET_AL_TAIL.search(n):
+            others = True; n = _ET_AL_TAIL.sub('', n).strip()
+        if not n:
+            continue
+        parts = _name_parts(n)
+        if len(parts) == 3 and _JUNIOR.match(parts[2]):
+            n = f'{parts[0]}, {parts[2]}, {parts[1]}'
+        names.append(n)
+    if len(names) > AUTHOR_LIMIT:
+        names, others = names[:AUTHOR_LIMIT], True
+    return ' and '.join(names + (['others'] if others else []))
 
 # An accent mark with no letter to sit on (left after composing; only damaged data has them) as its LaTeX accent on
 # nothing, so it still reaches BibTeX as ASCII
@@ -2118,23 +2228,26 @@ def _math_symbol(ch):
     return latex if '\\ensuremath' in latex else ch
 
 # In text (not math), the default OT1 font encoding prints < > | as ¡ ¿ — (12 Nov 2026); these commands print them right
-# in any encoding. Not inside \ensuremath{...}, which is math.
-_TEXT_ASCII = {'<': r'{\textless}', '>': r'{\textgreater}', '|': r'{\textbar}'}
+# in any encoding. & # % are LaTeX's own (13 Nov 2026): & and # stop the compile, and % silently drops the rest of the
+# line. Not inside \ensuremath{...}, which is math, nor inside \url{...} or \href{...}'s address; \& \# \% already
+# written stay as they are.
+_TEXT_ASCII = {'<': r'{\textless}', '>': r'{\textgreater}', '|': r'{\textbar}', '&': r'\&', '#': r'\#', '%': r'\%'}
+_TEXT_ASCII_RE = re.compile(r'(?<!\\)[<>|&#%]')
 
 def _text_ascii(t):
-    r"""< > | in a text part as {\textless} {\textgreater} {\textbar}, except inside \ensuremath{...}."""
+    r"""< > | & # % in a text part as {\textless} {\textgreater} {\textbar} \& \# \%, except as said above."""
     out, i = [], 0
-    for m in re.finditer(r'\\ensuremath\s*\{', t):
+    for m in re.finditer(r'\\(?:ensuremath|url|href)\s*\{', t):
         if m.start() < i:
             continue
-        out.append(re.sub(r'[<>|]', lambda c: _TEXT_ASCII[c.group(0)], t[i:m.start()]))
+        out.append(_TEXT_ASCII_RE.sub(lambda c: _TEXT_ASCII[c.group(0)], t[i:m.start()]))
         i = _bib_value_end(t, m.end() - 1)
         out.append(t[m.start():i])
-    out.append(re.sub(r'[<>|]', lambda c: _TEXT_ASCII[c.group(0)], t[i:]))
+    out.append(_TEXT_ASCII_RE.sub(lambda c: _TEXT_ASCII[c.group(0)], t[i:]))
     return ''.join(out)
 
 def _latex_value(v):
-    """One field value with its non-ASCII characters, and < > |, as braced LaTeX; inside $...$ math, symbols only."""
+    """One field value with its non-ASCII characters, and < > | & # %, as LaTeX; inside $...$ math, symbols only."""
     parts = re.split(r'(?<!\\)(\$[^$]*\$)', v)
     return ''.join(re.sub(r'[^\x00-\x7f]', lambda m: _math_symbol(m.group(0)), clean_text(p))
                    if len(p) > 1 and p.startswith('$') and p.endswith('$')
@@ -2142,8 +2255,8 @@ def _latex_value(v):
                                            _LATEX_ENCODER.unicode_to_latex(clean_text(p)))) for p in parts)
 
 def latex_ascii_entry(entry):
-    """A BibTeX entry with every non-ASCII character, and < > | outside math, in its field values written as LaTeX."""
-    if not re.search(r'[^\x00-\x7f]|[<>|]', entry):
+    """A BibTeX entry with every non-ASCII character, and < > | & # % outside math, in its field values written as LaTeX."""
+    if not re.search(r'[^\x00-\x7f]|[<>|&#%]', entry):
         return entry
     head = re.match(r'\s*@\w+\s*\{[^,]*,', entry)
     if not head:
@@ -2645,7 +2758,10 @@ def get_paper(paper_id):
         conn.close()
         return err('Paper not found', 404)
     result = dict(paper)
-    # If no stored bibtex, generate one from fields so View BibTeX always has content
+    # A stored entry is shown with the paper's fields, as the exports write it (13 Nov 2026), so Edit BibTeX starts from
+    # what is exported; if no stored bibtex, generate one from fields so View BibTeX always has content
+    if result.get('bibtex') and result['bibtex'].strip():
+        result['bibtex'] = _stored_entry(result, False)
     if not result.get('bibtex'):
         bibkey  = result.get('bibkey') or 'unknown'
         pubtype = result.get('pubtype') or 'article'
@@ -2815,6 +2931,18 @@ def update_paper_bibtex(paper_id):
                      (bib, new_bibkey, paper_id))
     else:
         conn.execute('UPDATE papers SET bibtex=? WHERE id=?', (bib, paper_id))
+    # The fields the exports take from the paper follow what was typed (13 Nov 2026; see _stored_entry)
+    entries = _bib_entries(bib)
+    if entries:
+        typed = _bib_fields(entries[0][2])
+        sets  = {}
+        for name, col in _FIELD_COLUMNS:
+            v = (typed.get(name) or '').strip()
+            if v:
+                sets[col] = names_from_latex(v) if col == 'authors' else clean_text(v) if col == 'title' else v
+        if sets:
+            conn.execute(f"UPDATE papers SET {', '.join(c + '=?' for c in sets)} WHERE id=?",
+                         list(sets.values()) + [paper_id])
     conn.commit()
     conn.close()
     return jsonify({'ok': True})
@@ -4551,14 +4679,17 @@ def export_bib():
     for r in rows:
         found_keys.add(r['bibkey'])
         if r['bibtex'] and r['bibtex'].strip():
-            # Use stored BibTeX if available (accents as LaTeX for BibTeX, since 12 Nov 2026)
-            entries.append(latex_ascii_entry(r['bibtex'].strip()))
+            # Use stored BibTeX if available (accents as LaTeX for BibTeX, since 12 Nov 2026), with the paper's fields
+            # and key (since 13 Nov 2026: an entry stored before the key was changed still answers to the key cited)
+            entry = re.sub(r'@\w+\{[^,]+,', f'@{r["pubtype"] or "article"}{{{r["bibkey"]},', _stored_entry(r, True),
+                           count=1, flags=re.IGNORECASE)
+            entries.append(latex_ascii_entry(entry))
         else:
             # Generate BibTeX from fields
             pubtype = r['pubtype'] or 'article'
             bibkey  = r['bibkey']
             lines   = [f'@{pubtype}{{{bibkey},']
-            if r['authors']: lines.append(f'  author  = {{{r["authors"]}}},')
+            if r['authors']: lines.append(f'  author  = {{{_bib_authors(r["authors"], True)}}},')
             if r['title']:   lines.append(f'  title   = {_bib_title(r["title"], True)},')
             if r['year']:    lines.append(f'  year    = {{{r["year"]}}},')
             if r['journal']: lines.append(f'  journal = {{{r["journal"]}}},')

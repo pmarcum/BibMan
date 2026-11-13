@@ -1,5 +1,15 @@
 # Changelog
 
+## 13 November 2026: author lists, group names, & # % and stored entries in the exports (Core 16)
+
+- **Every author is stored; the exports BibTeX reads write the first 15 and `and others`.** The old endings `, et al.` (from the old spreadsheet, which cut lists to 10) and `and et al.` (from the accent repair) are written as `and others`, which styles print as "et al."; BibTeX misread both.
+- **`Last, First, Jr.` is exported in BibTeX's order, `Last, Jr., First`** (49 names were printed "Jr. Last, First").
+- **Group names are kept whole**: Core 16 stores names ADS gives without a comma in braces, `{Gaia Collaboration}`; `.bib` imports and hand edits keep braces around a whole name. People written `First Last` are left as they are.
+- **`&`, `#` and `%` outside math are exported as `\&`, `\#`, `\%`** (they stopped the compile, and `%` silently cut titles short).
+- **A stored BibTeX entry is exported with the paper's fields** (author, title, year, journal, volume, pages, DOI) and key; *Edit BibTeX* updates those fields. Edits and repairs had not reached the 31 papers with a stored entry.
+- **The repair script's `authors` pass** puts back full author lists from ADS, report first; its `apply --fix` can also set a journal and name papers outside the plan.
+- Core 16 (Dashboard 20, Capture 16: select Core 16 and redeploy; their `Code.gs` is unchanged), and the server.
+
 ## 13 November 2026: the VM runs a git checkout
 
 - **`/home/bibman/bibman` is now a git checkout of this repo**, the server running from `cloud/` with the same `venv/`. Deploying is `git pull --ff-only` and a restart; files on the VM are no longer copied or edited by hand (see MAINTENANCE.md, *Updating the server code*).

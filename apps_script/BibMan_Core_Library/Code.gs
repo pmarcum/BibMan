@@ -74,7 +74,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 15;
+const BIBMAN_CORE_LIBRARY_VERSION = 16;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -773,6 +773,13 @@ function addPaperByIdentifier(config, identifier, library) {
  */
 function _adsDocToPaper(doc) {
   const authors     = (doc.author || []).join(' and ');
+  // ADS writes every person as "Last, First"; a name of several words without a comma is a group, stored in braces,
+  // {Gaia Collaboration}, so BibTeX keeps it whole instead of reading "G. Collaboration" (Core 16). The key below is
+  // still made from the names as ADS writes them.
+  const authorsStored = (doc.author || []).map(n => {
+    const t = String(n).trim();
+    return (t.indexOf(',') < 0 && /\s/.test(t) && t.charAt(0) !== '{') ? '{' + t + '}' : t;
+  }).join(' and ');
   const identifiers = doc.identifier || [];
   const arxivId     = identifiers.find(i => i.toLowerCase().startsWith('arxiv:'))
                         ?.replace(/^arXiv:/i, '') || '';
@@ -852,7 +859,7 @@ function _adsDocToPaper(doc) {
     // Names and titles as ADS gives them, plain UTF-8 (Core 14): BibMan stores UTF-8 and writes LaTeX accents only
     // in the exports BibTeX reads (the server does that)
     title:       title,
-    authors:     authors,
+    authors:     authorsStored,
     year:        String(doc.year || ''),
     journal:     journal,
     volume:      vol,

@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 15,
-  "bibman_frontend_thinclient_webapp_version": 19,
-  "bibman_bookmarklet_capture_webapp_version": 15,
-  "bibman_core_library_notes": "v15: titles of papers added from ADS taken from ADS's BibTeX export (LaTeX kept; ADS's lowered tilde stored as $\\sim$ etc.). In each web app: Libraries → BibManCore → select version 15, then Deploy → Manage deployments → Edit → New version",
-  "bibman_frontend_thinclient_webapp_notes": "v19: select Core 15 and redeploy (Code.gs unchanged)",
-  "bibman_bookmarklet_capture_webapp_notes": "v15: select Core 15 and redeploy (Code.gs unchanged)"
+  "bibman_core_library_version": 16,
+  "bibman_frontend_thinclient_webapp_version": 20,
+  "bibman_bookmarklet_capture_webapp_version": 16,
+  "bibman_core_library_notes": "v16: group names from ADS (no comma, e.g. Gaia Collaboration) stored in braces, {Gaia Collaboration}, so BibTeX keeps them whole. In each web app: Libraries → BibManCore → select version 16, then Deploy → Manage deployments → Edit → New version",
+  "bibman_frontend_thinclient_webapp_notes": "v20: select Core 16 and redeploy (Code.gs unchanged)",
+  "bibman_bookmarklet_capture_webapp_notes": "v16: select Core 16 and redeploy (Code.gs unchanged)"
 }
