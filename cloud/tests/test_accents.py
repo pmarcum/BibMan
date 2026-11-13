@@ -178,3 +178,19 @@ def test_titles_braced_for_bibtex(server):
     assert r'title   = {{The SAURON project at z $\sim$ 2}},' in drive
     refs = c.get('/get_bib?library=Braces&tags=1').get_data(as_text=True)
     assert r'title   = {The SAURON project at z $\sim$ 2},' in refs
+
+def test_ascii_relations_in_text(server):
+    """< > | outside math are written as text commands: the default OT1 encoding prints them as ¡ ¿ — (12 Nov 2026)."""
+    v = server._latex_value
+    assert v('M$_{*}$ > 2 and z < 1 | x') == r'M$_{*}$ {\textgreater} 2 and z {\textless} 1 {\textbar} x'
+    assert v('$M_* > 2$ and $z<1$') == '$M_* > 2$ and $z<1$'                      # math exactly as stored
+    assert v(r'z {\ensuremath{<}} 1 and {\ensuremath{\mathrm{a}>b}} > c') == \
+        r'z {\ensuremath{<}} 1 and {\ensuremath{\mathrm{a}>b}} {\textgreater} c'    # \ensuremath is math too
+    assert v('Smith & Jones <a>') == r'Smith & Jones {\textless}a{\textgreater}'      # & is a separate problem
+
+def test_ascii_only_entry_with_relations(server):
+    """An entry with no non-ASCII character still gets < > | written as text commands; addresses untouched."""
+    e = '@article{k,\n  title   = {{Galaxies at z < 1}},\n  url     = {https://x.org/?a=1|2},\n}'
+    out = server.latex_ascii_entry(e)
+    assert r'{{Galaxies at z {\textless} 1}}' in out and 'https://x.org/?a=1|2' in out
+    assert server.latex_ascii_entry('@article{k,\n  title = {Plain},\n}') == '@article{k,\n  title = {Plain},\n}'

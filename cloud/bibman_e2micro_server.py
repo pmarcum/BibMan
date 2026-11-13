@@ -2117,17 +2117,33 @@ def _math_symbol(ch):
     latex = _LATEX_ENCODER.unicode_to_latex(ch)
     return latex if '\\ensuremath' in latex else ch
 
+# In text (not math), the default OT1 font encoding prints < > | as ¡ ¿ — (12 Nov 2026); these commands print them right
+# in any encoding. Not inside \ensuremath{...}, which is math.
+_TEXT_ASCII = {'<': r'{\textless}', '>': r'{\textgreater}', '|': r'{\textbar}'}
+
+def _text_ascii(t):
+    r"""< > | in a text part as {\textless} {\textgreater} {\textbar}, except inside \ensuremath{...}."""
+    out, i = [], 0
+    for m in re.finditer(r'\\ensuremath\s*\{', t):
+        if m.start() < i:
+            continue
+        out.append(re.sub(r'[<>|]', lambda c: _TEXT_ASCII[c.group(0)], t[i:m.start()]))
+        i = _bib_value_end(t, m.end() - 1)
+        out.append(t[m.start():i])
+    out.append(re.sub(r'[<>|]', lambda c: _TEXT_ASCII[c.group(0)], t[i:]))
+    return ''.join(out)
+
 def _latex_value(v):
-    """One field value with its non-ASCII characters as braced LaTeX; inside $...$ math, its symbols only."""
+    """One field value with its non-ASCII characters, and < > |, as braced LaTeX; inside $...$ math, symbols only."""
     parts = re.split(r'(?<!\\)(\$[^$]*\$)', v)
     return ''.join(re.sub(r'[^\x00-\x7f]', lambda m: _math_symbol(m.group(0)), clean_text(p))
                    if len(p) > 1 and p.startswith('$') and p.endswith('$')
-                   else re.sub('[\u0300-\u036f]', lambda m: _LOOSE_ACCENTS.get(m.group(0), ''),
-                               _LATEX_ENCODER.unicode_to_latex(clean_text(p))) for p in parts)
+                   else _text_ascii(re.sub('[\u0300-\u036f]', lambda m: _LOOSE_ACCENTS.get(m.group(0), ''),
+                                           _LATEX_ENCODER.unicode_to_latex(clean_text(p)))) for p in parts)
 
 def latex_ascii_entry(entry):
-    """A BibTeX entry with every non-ASCII character in its field values written as braced LaTeX."""
-    if not re.search(r'[^\x00-\x7f]', entry):
+    """A BibTeX entry with every non-ASCII character, and < > | outside math, in its field values written as LaTeX."""
+    if not re.search(r'[^\x00-\x7f]|[<>|]', entry):
         return entry
     head = re.match(r'\s*@\w+\s*\{[^,]*,', entry)
     if not head:

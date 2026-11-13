@@ -1,5 +1,10 @@
 # Changelog
 
+## 12 November 2026 (later): < > | in exported titles print right
+
+- **The compile export and Export .bib to Drive write `<`, `>` and `|` outside math as `{\textless}`, `{\textgreater}`, `{\textbar}`.** In the default OT1 font encoding (aastex, many journal classes) plain `<` `>` `|` in text print as ¡ ¿ —; 88 titles had them (e.g. Bernardi et al. 2011, `M$_{*}$ > 2`). Math, including `\ensuremath{...}`, and address fields are left as they are; the database is unchanged.
+- Server only; Core, Dashboard and Capture are unchanged.
+
 ## 12 November 2026: titles keep their LaTeX (Core 15)
 
 - **Titles of papers added from ADS now come from ADS's BibTeX export, LaTeX kept** (`colour-{\ensuremath{\sigma}}`, `10$^{11}$`). ADS's search service gives a plain-text title (`10^8 M_☉`, `z ~ 7`) that LaTeX misreads. ADS's lowered tilde (`\raisebox{-0.5ex}\textasciitilde`) is stored as `$\sim$`, `$\lesssim$`, `$\gtrsim$` or `$\simeq$`.
