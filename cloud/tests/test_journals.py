@@ -33,10 +33,13 @@ def test_journals_pass(server, tmp_path, monkeypatch):
     falchi = add('falchi2016', '\\an', '2016SciA....2E0377F'); real = add('real2008', '\\an', '2008AN....329..619G')
     apj = add('savoy2009', '\\afz', '2009ApJ...706...21S'); gone = add('vandyk2005', '\\an', '')
     fine = add('ok2010', '\\apj', '2010ApJ...1....1O')
+    conf = c.post('/api/papers/add-manual', json={'title': 'talk', 'authors': 'Doe, J.', 'year': '2008', 'pubtype': 'inproceedings',
+           'bibcode': '2008IAUS..245..285A', 'library': 'Extragalactic', '_username': 'pam', 'bibkey': 'talk2008'},
+           headers=H).get_json()['paper_id']
     sys.path.insert(0, os.path.dirname(server.__file__)); import bibman_repair_accents as R
     monkeypatch.setattr(R, 'DB_PATH', os.environ['DB_PATH'])
     pubs = {'2016SciA....2E0377F': 'Science Advances', '2008AN....329..619G': 'Astronomische Nachrichten',
-            '2009ApJ...706...21S': 'The Astrophysical Journal'}
+            '2009ApJ...706...21S': 'The Astrophysical Journal', '2008IAUS..245..285A': 'Formation and Evolution of Galaxy Bulges'}
     class Resp:
         def __init__(self, d): self.status_code, self._d = 200, d
         def raise_for_status(self): pass
@@ -52,8 +55,11 @@ def test_journals_pass(server, tmp_path, monkeypatch):
     assert {'falchi2016', 'real2008', 'savoy2009', 'vandyk2005'} <= set(plan) and 'ok2010' not in plan  # \apj is defined
     assert plan['falchi2016']['journal_after'] == 'Science Advances' and plan['savoy2009']['journal_after'] == '\\apj'
     assert plan['real2008']['journal_after'] == 'Astronomische Nachrichten' and plan['vandyk2005']['category'] == 'check'
+    assert plan['talk2008']['journal_after'] == 'Formation and Evolution of Galaxy Bulges'
+    assert 'conference paper or chapter with no venue' in plan['talk2008']['notes']
     R.apply(type('A', (), {'plan': str(out / 'journals-plan.json'), 'skip': '', 'include': ''}))
     get = lambda pid: conn.execute('SELECT journal FROM papers WHERE id=?', (pid,)).fetchone()[0]
+    assert get(conf) == 'Formation and Evolution of Galaxy Bulges'
     assert get(falchi) == 'Science Advances' and get(apj) == '\\apj' and get(gone) == '\\an' and get(fine) == '\\apj'
     R.undo(type('A', (), {'undo': str(sorted(out.glob('undo-*.json'))[-1])}))
     assert get(falchi) == '\\an' and get(apj) == '\\afz'

@@ -34,7 +34,8 @@ list (and the title, where it is damaged too) from NASA ADS, as plain UTF-8, whi
      --include (to take ADS's value) or given a value with --fix.
        ADS_TOKEN=... python bibman_repair_accents.py authors --out /tmp/accent_repair
      --fix may also name papers that are not in the plan, and may give a "journal".
-  J. journals (13 Nov 2026): papers whose journal is a macro the journal classes don't define (\\an, \\afz, \\sci, ...;
+  J. journals (13 Nov 2026; since 16 Nov also conference papers and book chapters with no venue, which the exports write
+     as booktitle): papers whose journal is a macro the journal classes don't define (\\an, \\afz, \\sci, ...;
      the old spreadsheet's matching gave many the wrong one) get their journal from ADS, stored as Core 17 stores it.
        ADS_TOKEN=... python bibman_repair_accents.py journals --out /tmp/accent_repair
   3. undo, if ever needed: puts back exactly the values saved in an undo file.
@@ -601,12 +602,18 @@ def journals_pass(args):
     import requests
     os.makedirs(args.out, exist_ok=True)
     conn = sqlite3.connect(f'file:{DB_PATH}?mode=ro', uri=True); conn.row_factory = sqlite3.Row
-    rows = conn.execute("""SELECT p.id, p.bibkey, p.bibcode, p.doi, p.authors, p.title, p.journal, l.name AS library
+    rows = conn.execute("""SELECT p.id, p.bibkey, p.bibcode, p.doi, p.authors, p.title, p.journal, p.pubtype,
+                                  l.name AS library
                              FROM papers p LEFT JOIN libraries l ON l.id = p.library_id ORDER BY p.bibkey""").fetchall()
     conn.close()
-    todo = [r for r in rows if re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal'] or '')
-            and re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal']).group(1) not in DEFINED_JOURNAL_MACROS]
-    print(f'{len(todo)} papers with a journal macro the journal classes don\'t define; asking ADS ...')
+    undefined = lambda r: (re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal'] or '')
+                           and re.fullmatch(r'\s*\\([A-Za-z]+)\s*', r['journal']).group(1) not in DEFINED_JOURNAL_MACROS)
+    # a conference paper or book chapter with no venue at all (16 Nov 2026): the exports write the venue as booktitle
+    no_venue = lambda r: (r['pubtype'] or '').lower() in ('inproceedings', 'incollection', 'conference') \
+        and not (r['journal'] or '').strip()
+    todo = [r for r in rows if undefined(r) or no_venue(r)]
+    print(f'{sum(1 for r in todo if undefined(r))} papers with a journal macro the journal classes don\'t define and '
+          f'{sum(1 for r in todo if no_venue(r))} conference papers or chapters with no venue; asking ADS ...')
     plan, session = [], requests.Session()
     for r in todo:
         item = {'id': r['id'], 'bibkey': r['bibkey'], 'library': r['library'], 'bibcode': r['bibcode'] or '',
@@ -617,6 +624,8 @@ def journals_pass(args):
             doc = ads_lookup(session, token, r['bibcode'], r['doi'])
         except Exception as e:
             doc = None; item['notes'].append(f'ADS could not be asked: {e}')
+        if no_venue(r):
+            item['notes'].append('conference paper or chapter with no venue')
         if doc and doc.get('pub'):
             item['journal_after'] = journal_for_storage(clean_text(doc['pub']))
             item['notes'].append(f"ADS: {doc['pub']} ({doc.get('bibcode', '')})")

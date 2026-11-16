@@ -1951,7 +1951,7 @@ def get_bib():
             entry.append(f'  author  = {{{_bib_authors(row["authors"] or "Unknown", as_latex)}}},')
             entry.append(f'  title   = {_bib_title(row["title"] or "Unknown", as_latex)},')
             if row['year']:    entry.append(f'  year    = {{{row["year"]}}},')
-            if row['journal']: entry.append(f'  journal = {{{_bib_journal(row["journal"], as_latex)}}},')
+            if row['journal']: entry.append(f'  {_venue_field(pubtype, as_latex)} = {{{_bib_journal(row["journal"], as_latex)}}},')
             if row['volume']:  entry.append(f'  volume  = {{{row["volume"]}}},')
             if row['pages']:   entry.append(f'  pages   = {{{row["pages"]}}},')
             if row['doi']:     entry.append(f'  doi     = {{{row["doi"]}}},')
@@ -2023,6 +2023,14 @@ def _bib_journal(journal, for_bibtex):
         return journal
     return JOURNAL_NAMES.get(m.group(1), journal)
 
+# A conference paper or a chapter in a book keeps its venue in the paper's journal field (as ADS gives it); bibliography
+# styles print that venue only from "booktitle" for these types, so the exports BibTeX reads write it there (16 Nov 2026).
+VENUE_IS_BOOKTITLE = {'inproceedings', 'incollection', 'conference'}
+
+def _venue_field(pubtype, for_bibtex):
+    """The field an export writes the paper's journal (or venue) into."""
+    return 'booktitle' if for_bibtex and (pubtype or '').strip().lower() in VENUE_IS_BOOKTITLE else 'journal'
+
 def _bib_title(title, for_bibtex):
     """A title as a BibTeX field value. For the exports BibTeX reads (for_bibtex), inside a second pair of braces, as ADS
     writes them, so styles that change a title's capitals (M$_*$, SAURON, H II) leave it as it is (12 Nov 2026)."""
@@ -2067,7 +2075,9 @@ def _stored_entry(row, for_bibtex):
             continue
         if name == 'author':    v = '{' + _bib_authors(v, for_bibtex) + '}'
         elif name == 'title':   v = _bib_title(v, for_bibtex)
-        elif name == 'journal': v = '{' + _bib_journal(v, for_bibtex) + '}'
+        elif name == 'journal':
+            v = '{' + _bib_journal(v, for_bibtex) + '}'
+            name = _venue_field(row['pubtype'] if 'pubtype' in row.keys() else '', for_bibtex)
         else:                   v = '{' + v + '}'
         entry = _bib_set_field(entry, name, v)
     return entry
@@ -2954,6 +2964,7 @@ def update_paper_bibtex(paper_id):
     entries = _bib_entries(bib)
     if entries:
         typed = _bib_fields(entries[0][2])
+        typed.setdefault('journal', typed.get('booktitle', ''))      # a conference paper's venue (16 Nov 2026)
         sets  = {}
         for name, col in _FIELD_COLUMNS:
             v = (typed.get(name) or '').strip()
@@ -4509,7 +4520,7 @@ def import_bib_file():
             clean_text(fields.get('title', '')),           # plain UTF-8 (12 Nov 2026); the stored BibTeX keeps
             names_from_latex(fields.get('author', '')),    # the entry exactly as imported
             fields.get('year', ''),
-            fields.get('journal', ''),
+            fields.get('journal') or fields.get('booktitle', ''),    # a conference paper's venue (16 Nov 2026)
             fields.get('volume', ''),
             fields.get('pages', ''),
             pubtype,
@@ -4711,7 +4722,7 @@ def export_bib():
             if r['authors']: lines.append(f'  author  = {{{_bib_authors(r["authors"], True)}}},')
             if r['title']:   lines.append(f'  title   = {_bib_title(r["title"], True)},')
             if r['year']:    lines.append(f'  year    = {{{r["year"]}}},')
-            if r['journal']: lines.append(f'  journal = {{{_bib_journal(r["journal"], True)}}},')
+            if r['journal']: lines.append(f'  {_venue_field(pubtype, True)} = {{{_bib_journal(r["journal"], True)}}},')
             if r['volume']:  lines.append(f'  volume  = {{{r["volume"]}}},')
             if r['pages']:   lines.append(f'  pages   = {{{r["pages"]}}},')
             if r['doi']:     lines.append(f'  doi     = {{{r["doi"]}}},')
