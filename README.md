@@ -38,7 +38,7 @@ The button is personal to your group's BibMan, so get it from your own group's d
 
 ## Adding papers
 
-While viewing a paper on NASA ADS, arXiv, or a journal's site, click **Add to BibMan** in your bookmarks bar. BibMan finds the paper's identifier (DOI, arXiv ID or ADS bibcode), pulls the bibliographic record from NASA ADS, reads the PDF, and splits it into passages you can tag and search. You can also add papers by hand or import an existing `.bib` file from the dashboard.
+While viewing a paper on NASA ADS, SciX, arXiv, or a journal's site, click **Add to BibMan** in your bookmarks bar. A small BibMan window opens with the paper's details: choose the library (and tags, if you like) and click **Add to BibMan**. BibMan finds the paper's identifier (DOI, arXiv ID or ADS bibcode), pulls the bibliographic record from NASA ADS, reads the PDF, and splits it into passages you can tag and search. You can also add papers by hand or import an existing `.bib` file from the dashboard.
 
 The BibMan server does not keep copies of PDFs. It records where each PDF lives and fetches it when you open the paper. (Your administrator can optionally have PDFs saved to a shared Google Drive folder as well.)
 

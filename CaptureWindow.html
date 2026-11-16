@@ -1,0 +1,229 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add to BibMan</title>
+<!-- The bookmarklet's window (Core 19). Served by the Capture web app (doGet with ?capture=1), fetched from GitHub main at
+     serve time. The bookmarklet puts its details after the # of the address; this page reads them, removes them from the
+     address, and makes its requests through the web app's captureCall (the same actions and checks as before). -->
+<style>
+  body{margin:0;background:#17171a;color:#e8e8f0;font-family:monospace;font-size:13px}
+  #box{padding:18px 20px}
+  #hdr{color:#7eb8f7;font-size:10px;text-transform:uppercase;letter-spacing:.12em;margin-bottom:14px}
+  .wait{color:#888;text-align:center;padding:18px 0}
+  .err{color:#f77e7e;margin-bottom:12px}
+  .warn{color:#f7c97e;margin-bottom:8px}
+  .row{display:flex;align-items:center;margin-bottom:4px;gap:6px}
+  .lbl{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.1em;width:58px;flex-shrink:0;text-align:right}
+  .row input,.row select{flex:1;background:#0f0f11;border:1px solid #353540;border-radius:3px;padding:3px 6px;color:#e8e8f0;
+    font-size:11px;font-family:monospace;box-sizing:border-box;width:100%}
+  .lib{margin:6px 0 8px;background:rgba(126,184,247,0.08);border:1px solid rgba(126,184,247,0.3);border-radius:4px;padding:4px 6px}
+  .lib .lbl,.tags .lbl{color:#7eb8f7;font-weight:600}
+  .tags{display:none;margin-bottom:8px;gap:6px;align-items:flex-start}
+  .tags .lbl{padding-top:4px}
+  #tagbox{flex:1;display:flex;flex-wrap:wrap;gap:4px;font-size:11px}
+  .chip{cursor:pointer;padding:2px 8px;border-radius:10px;border:1px solid}
+  .note{width:100%;font-size:10px;color:#666;margin-top:2px}
+  .small{font-size:10px;color:#555;margin:2px 0 6px}
+  .small a{color:#7eb8f7}
+  .src{font-size:10px;margin-bottom:10px}
+  .btns{display:flex;gap:8px;justify-content:flex-end}
+  button{font-family:monospace;padding:5px 14px;border-radius:4px;cursor:pointer}
+  .cancel{background:transparent;border:1px solid #353540;color:#888}
+  .save{background:#7eb8f7;border:none;color:#000;font-weight:600}
+  .save:disabled{opacity:.5;cursor:default}
+  .ok{color:#7ef7c2;text-align:center;padding:16px}
+  .strip{background:rgba(247,201,126,0.12);border:1px solid rgba(247,201,126,0.4);border-radius:4px;padding:6px 10px;
+    margin-bottom:12px;font-size:10px;color:#f7c97e;display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+  .strip div{flex:1}
+  .strip button{background:transparent;border:none;color:#f7c97e;font-size:12px;padding:0;opacity:.7;line-height:1}
+</style>
+</head>
+<body>
+<div id="box">
+  <div id="hdr">Add to BibMan</div>
+  <div id="notices"></div>
+  <div id="bdy"><div class="wait">Extracting metadata...</div></div>
+</div>
+<script>
+(function(){
+  var d=null;
+  var hdr=document.getElementById('hdr'),bdy=document.getElementById('bdy'),notices=document.getElementById('notices');
+  function el(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e;}
+  // One request to the Capture web app, as the bookmarklet that opened this window
+  function call(o){
+    o.bv=d.bv;
+    if(d.guest_key)o.guest_key=d.guest_key;else o.credential=d.credential;
+    return new Promise(function(ok,no){google.script.run.withSuccessHandler(ok).withFailureHandler(no).captureCall(o);});
+  }
+  // The window was opened by the bookmarklet, so it may close itself; if the browser refuses, say so
+  function closeWin(){
+    try{window.top.close();}catch(e){}
+    setTimeout(function(){bdy.innerHTML='';bdy.appendChild(el('div','wait','You can close this window.'));},400);
+  }
+  function closeBtn(){var b=el('button','cancel','Close');b.onclick=closeWin;var r=el('div','btns');r.appendChild(b);return r;}
+  function fail(text,cls){bdy.innerHTML='';bdy.appendChild(el('div',cls||'err',text));bdy.appendChild(closeBtn());}
+
+  var shown={};
+  function strip(text,sub){
+    var s=el('div','strip'),t=el('div');
+    t.appendChild(el('strong',null,text));
+    if(sub){t.appendChild(document.createElement('br'));var sp=el('span',null,sub);sp.style.opacity='0.7';t.appendChild(sp);}
+    var x=el('button',null,'✕');x.onclick=function(){s.remove();};
+    s.appendChild(t);s.appendChild(x);notices.appendChild(s);
+  }
+  function notice(r){
+    if(!r)return;
+    if(r.bibman_bookmarklet_update_available&&!shown.bm){
+      shown.bm=1;
+      strip('A newer BibMan bookmarklet is available'+(r.bibman_bookmarklet_notes?': '+r.bibman_bookmarklet_notes:''),
+        d.guest_key?'To get it, open your guest install link again and drag the new button to your bookmarks bar, then delete the old bookmark.'
+                   :'To get it: BibMan dashboard → Utilities → Bookmarklet. Drag the button to your bookmarks bar, then delete the old bookmark.');
+    }
+    if(r.bibman_bookmarklet_capture_update_available&&!shown.cap&&!d.guest_key){
+      shown.cap=1;
+      strip('BibMan capture web app update available'+(r.bibman_bookmarklet_capture_webapp_notes?': '+r.bibman_bookmarklet_capture_webapp_notes:''),
+        'Ask your BibMan admin to install it.');
+    }
+  }
+
+  function fld(label,val){
+    var row=el('div','row'),inp=el('input');
+    inp.value=String(val||'');
+    row.appendChild(el('div','lbl',label));row.appendChild(inp);
+    return {row:row,inp:inp};
+  }
+
+  function form(meta,libsReady){
+    var src=meta.source||'unknown';
+    var srcColor=src==='ads'?'#7ef7c2':src.indexOf('ads')===0?'#f7c97e':'#888';
+    bdy.innerHTML='';
+    var f={};
+    [['Title','title'],['Authors','authors'],['Year','year'],['Journal','journal'],['Volume','volume'],['Pages','pages'],
+     ['DOI','doi'],['arXiv ID','arxiv_id']].forEach(function(p){var x=fld(p[0],meta[p[1]]);f[p[1]]=x.inp;bdy.appendChild(x.row);});
+
+    var libRow=el('div','row lib'),libSel=el('select');
+    libRow.appendChild(el('div','lbl','Library'));libRow.appendChild(libSel);
+    var lo=el('option',null,'Loading libraries...');lo.value='';libSel.appendChild(lo);
+    bdy.appendChild(libRow);
+
+    // Tags (only in bookmarklets that know whose they are): the person's tags already used in the chosen library
+    var picked={};
+    var tagRow=el('div','row tags'),tagBox=el('div');tagBox.id='tagbox';
+    tagRow.appendChild(el('div','lbl','Tags'));tagRow.appendChild(tagBox);
+    bdy.appendChild(tagRow);
+    function loadTags(){
+      picked={};
+      var lib=libSel.value==='__db__'?'':libSel.value;
+      if(!(d.who||d.guest_key)||!lib){tagRow.style.display='none';return;}
+      tagRow.style.display='flex';tagBox.textContent='Loading tags...';
+      call({action:'list_tags',library:lib,_username:d.who}).then(function(td){
+        if(libSel.value!==lib)return;
+        if(!td||!Array.isArray(td.tags)){tagRow.style.display='none';return;}
+        tagBox.innerHTML='';
+        td.tags.forEach(function(t){
+          var col=t.color||'#f59e0b',chip=el('span','chip',t.label);
+          chip.title='Click to add or remove this tag';
+          chip.style.borderColor=col;chip.style.color=col;
+          chip.onclick=function(){
+            if(picked[t.id]){delete picked[t.id];chip.style.background='transparent';chip.style.color=col;}
+            else{picked[t.id]=1;chip.style.background=col;chip.style.color='#000';}
+          };
+          tagBox.appendChild(chip);
+        });
+        tagBox.appendChild(el('div','note',(td.tags.length?'':'No tags used in this library yet. ')+'To create a new tag, use the BibMan dashboard.'));
+      }).catch(function(){tagRow.style.display='none';});
+    }
+    libSel.onchange=loadTags;
+
+    if(meta.dashboard&&!d.guest_key){
+      var dl=el('div','small');dl.appendChild(document.createTextNode('Other functions: '));
+      var a=el('a',null,'BibMan Dashboard');a.href=meta.dashboard;a.target='_blank';a.rel='noopener';
+      dl.appendChild(a);bdy.appendChild(dl);
+    }
+    var srcDiv=el('div','src');srcDiv.appendChild(document.createTextNode('Source: '));
+    var sv=el('span',null,src);sv.style.color=srcColor;srcDiv.appendChild(sv);
+    bdy.appendChild(srcDiv);
+
+    var btnRow=el('div','btns'),canBtn=el('button','cancel','Cancel'),savBtn=el('button','save','Add to BibMan');
+    canBtn.onclick=closeWin;savBtn.disabled=true;
+    btnRow.appendChild(canBtn);btnRow.appendChild(savBtn);bdy.appendChild(btnRow);
+
+    function ready(){savBtn.disabled=false;}
+    function oneOption(value,text){libSel.innerHTML='';var o=el('option',null,text);o.value=value;libSel.appendChild(o);}
+    libsReady.then(function(ld){
+      notice(ld);
+      if(d.guest_key){
+        // A guest bookmarklet's one library, from its key
+        libSel.innerHTML='';
+        if(ld.error){libSel.disabled=true;srcDiv.style.color='#f77e7e';srcDiv.textContent=ld.error;return;}
+        hdr.textContent='Add to BibMan: guest ('+ld.project+')';
+        oneOption(ld.library,ld.library);libSel.disabled=true;
+        libSel.title='This guest bookmarklet adds papers to this library only (until '+ld.ends_on+')';
+        ready();loadTags();return;
+      }
+      if(!ld.libraries||!ld.libraries.length)oneOption('','Default library');
+      else{
+        libSel.innerHTML='';
+        ld.libraries.forEach(function(l){var o=el('option',null,l.name);o.value=l.name;if(l.name===ld.current)o.selected=true;libSel.appendChild(o);});
+      }
+      var n=el('option',null,'+ New (use Dashboard)');n.value='__db__';libSel.appendChild(n);
+      ready();loadTags();
+    },function(){
+      if(d.guest_key){libSel.innerHTML='';srcDiv.style.color='#f77e7e';srcDiv.textContent='BibMan could not be reached. Please try again.';return;}
+      oneOption('','Default library');ready();
+    });
+
+    savBtn.onclick=function(){
+      savBtn.textContent='Saving...';savBtn.disabled=true;
+      var o={action:'save_captured',url:d.url,library:libSel.value==='__db__'?'':libSel.value,tag_ids:Object.keys(picked),
+             bibcode:meta.bibcode||'',bibkey:meta.bibkey||'',identifiers:meta.identifiers||[],_username:d.who};
+      Object.keys(f).forEach(function(k){o[k]=f[k].value;});
+      call(o).then(function(result){
+        notice(result);
+        if(result.error){fail(result.error);return;}
+        bdy.innerHTML='';
+        bdy.appendChild(el('div','ok','Added: '+(result.bibkey||result.message||'done')
+          +(result.tagged?' (tagged: '+result.tagged+')':'')
+          +(result.tag_errors&&result.tag_errors.length?' (some tags could not be added: '+result.tag_errors[0]+')':'')));
+        setTimeout(closeWin,2000);
+      },function(){
+        fail('Request sent: check the BibMan dashboard to confirm the paper was added.','warn');
+      });
+    };
+  }
+
+  function start(){
+    hdr.textContent=d.guest_key?'Add to BibMan: guest':'Add to BibMan';
+    // Both requests at once: the library list usually arrives while the paper's details are still being looked up
+    var libs=call({action:d.guest_key?'guest_info':'get_libraries'});
+    call({action:'extract_and_preview',url:d.url,identifier:d.identifier,title:d.title}).then(function(meta){
+      notice(meta);
+      if(meta.error){fail(meta.error);return;}
+      form(meta,libs);
+    },function(e){
+      if(/\.pdf(\?|#|$)/i.test(d.url))fail('Raw PDF page: please go to the abstract page and try again.','warn');
+      else fail('Error: '+((e&&e.message)||'unknown error'));
+    });
+  }
+
+  function decode(h){
+    h=String(h||'').replace(/-/g,'+').replace(/_/g,'/');
+    while(h.length%4)h+='=';
+    return JSON.parse(decodeURIComponent(escape(atob(h))));
+  }
+  google.script.url.getLocation(function(loc){
+    try{d=decode(loc.hash);}catch(e){d=null;}
+    if(!d||!(d.credential||d.guest_key)){
+      fail('This is the BibMan bookmarklet’s window. To add a paper, click the bookmarklet on the paper’s page.','warn');
+      return;
+    }
+    // The details, credential included, leave the window's address at once
+    try{google.script.history.replace(null,{capture:'1'},'');}catch(e){}
+    start();
+  });
+})();
+</script>
+</body>
+</html>

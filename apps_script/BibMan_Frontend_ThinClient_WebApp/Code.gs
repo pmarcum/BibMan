@@ -60,7 +60,10 @@
 // THE VERSION NUMBER IS IN SCRIPT PROPERTIES! CHANGE IT IN THERE!
 
 // ── Config builder ─────────────────────────────────────────────────────────────
-function _cfg() {
+// Its name ENDS with _ so that Google keeps it private: a page this web app serves can call any of the project's
+// functions by name (google.script.run) unless the name ends with _. Until 16 Nov 2026 it was called _cfg, which
+// anyone who could open the web app could call, and it returns every Script Property (credential, keys).
+function cfg_() {
   const p = PropertiesService.getScriptProperties();
   return {
     credential:                p.getProperty('GAS_CREDENTIAL')             || '',
@@ -94,7 +97,7 @@ function doGet(e) {
     return HtmlService.createHtmlOutput(BibManCore.getAuthSuccessHtml())
       .setTitle('BibMan — Authorized');
   }
-  const config = _cfg();
+  const config = cfg_();
   // '' = come in; otherwise a page asking for the access code (or saying why BibMan can't be opened)
   const gate = BibManCore.dashboardGate(config, (e && e.parameter) || {});
   if (gate) {
@@ -117,7 +120,7 @@ function doGet(e) {
 }
 
 function doPost(e) {
-  const config = _cfg();
+  const config = cfg_();
   const result = BibManCore.doPost(config, e);
   // BibManCore.doPost returns a sentinel for update_tunnel_url because
   // Script Properties can only be written from the bound script, not a library.
@@ -133,10 +136,10 @@ function doPost(e) {
 
 // ── Single dispatcher for all browser → GAS calls ─────────────────────────────
 // Index.html calls: google.script.run.gas('functionName', arg1, arg2, ...)
-function gas(fn, ...args) { return BibManCore.dispatch(_cfg(), fn, ...args); }
+function gas(fn, ...args) { return BibManCore.dispatch(cfg_(), fn, ...args); }
 
 // ── Cron (time-based triggers can only fire bound-script functions) ─────────────
-function runNightlyCron() { return BibManCore.runNightlyCron(_cfg()); }
+function runNightlyCron() { return BibManCore.runNightlyCron(cfg_()); }
 
 function setupCronTrigger() { return BibManCore.setupCronTrigger(); }
 
@@ -145,7 +148,7 @@ function setupCronTrigger() { return BibManCore.setupCronTrigger(); }
  * authorizeDrive: Run once after deployment to pre-authorize Drive scope.
  */
 function authorizeDrive() {
-  const cfg = _cfg();
+  const cfg = cfg_();
   if (!cfg.pdfFolderId) {
     const f = DriveApp.getRootFolder().createFolder('_bibman_auth_test_delete_me');
     f.setTrashed(true);

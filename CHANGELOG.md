@@ -1,5 +1,14 @@
 # Changelog
 
+## 16 November 2026 (evening): the bookmarklet opens its own window; web apps' settings kept private (Core 19, Dashboard 22, Capture 18, bookmarklet 1)
+
+- **The bookmarklet's form opens in a small BibMan window instead of on the page.** SciX (ADS's new interface, scixplorer.org) refuses a page's requests to other sites, so the box drawn on the page could not reach BibMan there ("Refused to connect because it violates the document's Content Security Policy"). A new window is not affected, so the bookmarklet now only finds the paper's identifier and opens the window; the form, the same as before, is served by the Capture web app (`CaptureWindow.html`, fetched from GitHub like the dashboard's page). The bookmarklet's details travel after the `#` of the window's address, which browsers never send to a server, and the window removes them from its address as soon as it has read them.
+- **The bookmarklet has its own number** (`bibman_bookmarklet_version` in `version.json`, `bv` in `bookmarklet.js`). A window opened by an older bookmarklet says that a newer one is available and how to get it; the old bookmarklets (the box on the page) say so in their update strip. They keep working where they worked.
+- Everyone gets the window by dragging the bookmarklet again from **Utilities → Bookmarklet**; guests open their install link again.
+- **The web apps' settings function is private.** A page a web app serves can call any function of its project by name unless the name ends with `_`. Both web apps' `Code.gs` had a function `_cfg` that returns every Script Property (the credential, the Gemini and ADS keys, the access code): anyone who could open the Capture web app's address (every guest's install link holds it), or anyone signed in to Google who opened the dashboard's, could read them from the browser's developer tools. It is now `cfg_`. **After installing, consider changing `GAS_CREDENTIAL`, `GEMINI_KEY`, `ADS_TOKEN` and `BIBMAN_ACCESS_CODE`** (MAINTENANCE.md, *Rotating secrets*; the access code is the Frontend's Script Property `BIBMAN_ACCESS_CODE`), since there is no way to tell whether anyone read them.
+- **The Capture project's editor functions** (`checkPdfLinks`, `fixPdfLinks`, `resavePdfsCheck`, `resavePdfsStart`, `authorizeDrive`) run as the owner, so they now refuse to run unless the owner started them (from the editor, as before).
+- Core 19; Dashboard web app 22 and Capture web app 18 (new `Code.gs` for both).
+
 ## 16 November 2026 (later): arXiv numbers in the old form (Core 18)
 
 - **The bookmarklet recognizes old-style arXiv numbers** (`astro-ph/0701517`, `hep-th/9901001`, `math.GT/0309136`). It read only the letters before the hyphen ("astro"), and Core sent those to ADS as free text: a capture of Strong et al. 2007 added a cell-biology paper by an author called Astro. A bookmarklet gets the fix when it is dragged again from the dashboard.

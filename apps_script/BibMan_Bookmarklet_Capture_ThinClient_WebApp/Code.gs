@@ -1,8 +1,10 @@
 /**
  * BibMan Bookmarklet Capture — Thin Client Shell
  * ============================================
- * Handles all bookmarklet POST requests, and (since Capture 12) shows guests the page from which they drag a guest
- * bookmarklet (this web app's address + ?guest=KEY; the dashboard gives out that link). Delegates all logic to BibMan_Core.
+ * Serves the bookmarklet's window (since Capture 18, with Core 19: the bookmarklet opens this web app's address with
+ * ?capture=1, and the window's requests come back through captureCall), handles POST requests from older bookmarklets
+ * and the server, and (since Capture 12) shows guests the page from which they drag a guest bookmarklet (this web app's
+ * address + ?guest=KEY; the dashboard gives out that link). Delegates all logic to BibMan_Core.
  *
  * Deploy as Web App:
  *   Execute as: Me (the deployer) ← correct, bookmarklet POSTs have no
@@ -28,7 +30,7 @@
  *
  * Keeping up to date:
  *   The dashboard will show a banner when a capture webapp update is available.
- *   Users who only use the bookmarklet will see a notice strip in the overlay.
+ *   Users who only use the bookmarklet will see a notice strip in the bookmarklet's window.
  *   To update: replace this Code.gs with the new version from GitHub,
  *   bump BOOKMARKLET_CAPTURE_VERSION to match version.json, and redeploy (new version).
  *
@@ -42,7 +44,10 @@
 //    (click on Gears/settings -> scroll down to bottom section, Script Properties)
 
 // ── Config builder ─────────────────────────────────────────────────────────────
-function _cfg() {
+// Its name ENDS with _ so that Google keeps it private: a page this web app serves can call any of the project's
+// functions by name (google.script.run) unless the name ends with _. Until 16 Nov 2026 it was called _cfg, which
+// anyone who could open the web app could call, and it returns every Script Property (credential, keys).
+function cfg_() {
   const p = PropertiesService.getScriptProperties();
   return {
     credential:                p.getProperty('GAS_CREDENTIAL')             || '',
@@ -63,27 +68,41 @@ function _cfg() {
 }
 
 // ── Web app entry points ───────────────────────────────────────────────────────
-function doPost(e) { return BibManCore.captureDoPost(_cfg(), e); }
-// A guest's install page (Capture 12, needs Core 12 or later)
+function doPost(e) { return BibManCore.captureDoPost(cfg_(), e); }
+// ?capture=1: the bookmarklet's window (Capture 18, needs Core 19 or later); otherwise a guest's install page (Capture 12)
 function doGet(e) {
-  return HtmlService.createHtmlOutput(BibManCore.captureGuestPage(_cfg(), (e && e.parameter) || {}))
-    .setTitle('BibMan guest bookmarklet');
+  const p = (e && e.parameter) || {};
+  if (p.capture) return HtmlService.createHtmlOutput(BibManCore.captureWindowPage(cfg_(), p)).setTitle('Add to BibMan')
+                          .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return HtmlService.createHtmlOutput(BibManCore.captureGuestPage(cfg_(), p)).setTitle('BibMan guest bookmarklet');
+}
+// The window's requests (Capture 18): the same actions and checks as doPost
+function captureCall(data) { return BibManCore.captureAction(cfg_(), data); }
+
+// ── Functions for the editor only ───────────────────────────────────────────────
+// Pages this web app serves (a guest's install page, the bookmarklet's window) could call the functions below by name,
+// and they run as the owner, so each one first checks that the owner started it (Capture 18). Run from the editor, as
+// always: the active user there is the owner. Anyone else, signed in or not, is refused.
+function ownerOnly_() {
+  const who = (Session.getActiveUser().getEmail() || '').toLowerCase(), me = (Session.getEffectiveUser().getEmail() || '').toLowerCase();
+  if (!who || who !== me) throw new Error('Only the owner of this project can run this, from the Apps Script editor.');
 }
 
 // ── One-time PDF check (run from the editor: select the function, then Run; results in the Execution log) ──
 // checkPdfLinks lists the PDFs in BibMan_PDFs that are not "viewable by anyone with the link" and changes nothing;
 // fixPdfLinks switches them. Both stop after about 5 minutes; run fixPdfLinks again to carry on.
-function checkPdfLinks() { return BibManCore.checkPdfLinks(_cfg(), false); }
-function fixPdfLinks()   { return BibManCore.checkPdfLinks(_cfg(), true); }
+function checkPdfLinks() { ownerOnly_(); return BibManCore.checkPdfLinks(cfg_(), false); }
+function fixPdfLinks()   { ownerOnly_(); return BibManCore.checkPdfLinks(cfg_(), true); }
 // resavePdfsCheck shows the papers whose PDF never reached Drive (and the progress of a running re-save), changing
 // nothing; resavePdfsStart has the server re-save them in the background (one paper every 10 s).
-function resavePdfsCheck() { return BibManCore.resaveMissingPdfs(_cfg(), false); }
-function resavePdfsStart() { return BibManCore.resaveMissingPdfs(_cfg(), true); }
+function resavePdfsCheck() { ownerOnly_(); return BibManCore.resaveMissingPdfs(cfg_(), false); }
+function resavePdfsStart() { ownerOnly_(); return BibManCore.resaveMissingPdfs(cfg_(), true); }
 
 // ── Approve Drive access (run once from the editor: select authorizeDrive, then Run; changes nothing) ─────────────
 // This web app saves new papers' PDFs into Drive as you, so Google needs your approval first. authorizeDrive opens the
 // PDF folder (which makes Google ask), checks that the Drive API service is on (checkPdfLinks needs it), and says so.
 function authorizeDrive() {
+  ownerOnly_();
   const id = PropertiesService.getScriptProperties().getProperty('PDF_FOLDER_ID');
   if (!id) throw new Error('PDF_FOLDER_ID is not set: add it in Project Settings → Script Properties (same value as in the dashboard project)');
   const folder = DriveApp.getFolderById(id);

@@ -27,7 +27,7 @@
  *
  * Thin-client shell (what each group deploys) looks like:
  *
- *   function _cfg() {
+ *   function cfg_() {
  *     const p = PropertiesService.getScriptProperties();
  *     return {
  *       credential:    p.getProperty('GAS_CREDENTIAL')      || '',
@@ -49,10 +49,10 @@
  *     };
  *   }
  *
- *   function doGet(e)          { return BibManCore.doGet(_cfg(), e); }
- *   function doPost(e)         { return BibManCore.doPost(_cfg(), e); }
- *   function gas(fn, ...args)  { return BibManCore.dispatch(_cfg(), fn, ...args); }
- *   function runNightlyCron()  { return BibManCore.runNightlyCron(_cfg()); }
+ *   function doGet(e)          { return BibManCore.doGet(cfg_(), e); }
+ *   function doPost(e)         { return BibManCore.doPost(cfg_(), e); }
+ *   function gas(fn, ...args)  { return BibManCore.dispatch(cfg_(), fn, ...args); }
+ *   function runNightlyCron()  { return BibManCore.runNightlyCron(cfg_()); }
  *   function setupCronTrigger(){ return BibManCore.setupCronTrigger(); }
  *
  * Architecture:
@@ -75,7 +75,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 18;
+const BIBMAN_CORE_LIBRARY_VERSION = 19;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -89,7 +89,9 @@ const BIBMAN_CORE_LIBRARY_VERSION = 18;
 //   "bibman_bookmarklet_capture_webapp_version": 1,
 //   "bibman_core_library_notes": "What changed in BibMan_Core",
 //   "bibman_frontend_thinclient_webapp_notes": "What changed in Index.html",
-//   "bibman_bookmarklet_capture_webapp_notes": "What changed in the capture webapp thin client"
+//   "bibman_bookmarklet_capture_webapp_notes": "What changed in the capture webapp thin client",
+//   "bibman_bookmarklet_version": 1,                 (Core 19: the number in bookmarklet.js, var bv)
+//   "bibman_bookmarklet_notes": "What changed in the bookmarklet"
 // }
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK (PROPERTIES-DRIVEN) ──────────────────────────────────────────
@@ -117,6 +119,8 @@ function _checkForUpdates(frontendThinClientVersion, bookmarkletCaptureVersion, 
       latestCoreLibrary:       v.bibman_core_library_version                  || 1,
       latestFrontendThinClient: v.bibman_frontend_thinclient_webapp_version   || 1,
       latestBookmarkletCapture: v.bibman_bookmarklet_capture_webapp_version   || 1,
+      latestBookmarklet:       v.bibman_bookmarklet_version                   || 0,   // the bookmarklet itself (Core 19)
+      bookmarkletNotes:        v.bibman_bookmarklet_notes                     || '',
     };
   } catch(e) {
     Logger.log('BibManCore._checkForUpdates: ' + e.message);
@@ -232,7 +236,7 @@ function getClientConfig(config) {
  * dispatch: Routes a named function call from Index.html → BibMan_Core.
  *
  * The thin client exposes exactly one function to the browser:
- *   function gas(fn, ...args) { return BibManCore.dispatch(_cfg(), fn, ...args); }
+ *   function gas(fn, ...args) { return BibManCore.dispatch(cfg_(), fn, ...args); }
  *
  * Index.html calls it like:
  *   google.script.run.gas('getPapers', library, everyone)
@@ -1264,7 +1268,7 @@ function _bookmarkletCode_(captureUrl, fill) {
 /**
  * runNightlyCron: Called by a time-based trigger in the thin client.
  * GAS triggers can only fire functions in the bound script — the thin client
- * must define `function runNightlyCron() { BibManCore.runNightlyCron(_cfg()); }`
+ * must define `function runNightlyCron() { BibManCore.runNightlyCron(cfg_()); }`
  */
 function runNightlyCron(config) {
   const resolved = resolveConfig(config);
@@ -1445,9 +1449,13 @@ function getTaggedPapers(config, labelIds, everyone) {
 // have no visiting Google user identity. The visitor's username comes from
 // localStorage set during their dashboard session, passed as data._username.
 //
-// The bookmarklet fires TWO parallel fetches on open:
+// Since Core 19 the bookmarklet only opens a window (CaptureWindow.html, served by the Capture web app's doGet with
+// ?capture=1), because sites with a strict Content Security Policy (SciX) refuse a page's requests to Apps Script. The
+// window makes its requests through the web app's captureCall → captureAction. Bookmarklets from before that (the box
+// drawn on the page) still post to doPost → captureDoPost → captureAction, so they keep working where they worked.
+// The window makes TWO requests at once on opening:
 //   1. extract_and_preview — paper metadata (slow: ADS or Gemini)
-//   2. get_libraries       — library list + current (fast: Flask)
+//   2. get_libraries       — library list + current (fast: Flask), or guest_info for a guest bookmarklet
 // These are intentionally separate so library dropdown populates quickly
 // while metadata is still loading. Do NOT bundle libraries into
 // extract_and_preview — that would serialize two calls into one slower one.
@@ -1455,8 +1463,8 @@ function getTaggedPapers(config, labelIds, everyone) {
 // Append this section to the bottom of BibMan_Core.gs.
 // ═══════════════════════════════════════════════════════════════════════════════
 /**
- * captureDoPost: Full handler for BibMan_Bookmarklet_Capture_WebApp doPost().
- * Routes by action:
+ * captureDoPost: Handler for BibMan_Bookmarklet_Capture_WebApp doPost() (bookmarklets from before the window, and the
+ * server's PDF requests); since Core 19 it reads the request and hands it to captureAction. Routes by action:
  *   get_libraries       — returns library list + current (no credential required)
  *   extract_and_preview — ADS lookup or Gemini extraction for a URL/identifier
  *   save_captured       — saves a paper to the backend (credential required)
@@ -1464,56 +1472,36 @@ function getTaggedPapers(config, labelIds, everyone) {
  * list_tags and save_captured only, for the key's library and under its guest name (section 14b).
  */
 function captureDoPost(config, e) {
-  // Build inner response as a plain object first, then inject update flag,
-  // then wrap in ContentService at the very end. This lets us add
-  // bibman_bookmarklet_capture_update_available to every response path without repeating ourselves.
-  function _buildResponseObj() {
-    try {
-      const data       = JSON.parse(e.postData.contents);
-      const credential = config.credential || '';
-      // ── get_libraries: no credential required ────────────────────────────
-      if (data.action === 'get_libraries') {
-        try {
-          const full = _captureGetLibrariesFull(config);
-          return { libraries: full.libraries || [], current: full.current || '' };
-        } catch(err) {
-          return { libraries: [], current: '', error: err.message };
-        }
-      }
-      // ── A guest bookmarklet (Core 12): only its own guest key, never the credential ──
-      if (data.guest_key) return _guestCapture_(config, data);
-      // ── All other actions require credential ──────────────────────────────
-      if (data.credential !== credential) { return { error: 'unauthorized' }; }
-      // ── extract_and_preview ───────────────────────────────────────────────
-      if (data.action === 'extract_and_preview') return _captureExtract_(config, data);
-      // ── upload_pdf: the server hands over a PDF to save in BibMan_PDFs/<library>/ (Core 10) ──
-      if (data.action === 'upload_pdf') {
-        try { return savePdfToDrive(config, data.pdf_base64, data.filename, data.library_name || ''); }
-        catch(err) { return { ok: false, error: err.message }; }
-      }
-      // ── find_pdf: is a PDF of this name already in BibMan_PDFs/<library>/? (used when re-saving) ──
-      if (data.action === 'find_pdf') {
-        try { return findPdfInDrive(config, data.filename, data.library_name || ''); }
-        catch(err) { return { ok: false, error: err.message }; }
-      }
-      // ── list_tags: the tags this person could use in the dashboard that are already used in this library (Core 11) ──
-      if (data.action === 'list_tags') {
-        const who = (data._username || '').trim(), lib = (data.library || '').trim();
-        if (!who || !lib) return { tags: [] };
-        try {
-          const labels = apiCall(config, 'GET', '/api/tags/labels', null, { library: lib, _u: who });
-          return { tags: (Array.isArray(labels) ? labels : []).map(function(l) { return { id: l.id, label: l.label, color: l.color }; }) };
-        } catch(err) { return { tags: [], error: err.message }; }
-      }
-      // ── save_captured ─────────────────────────────────────────────────────
-      if (data.action === 'save_captured') return _captureSave_(config, data, (data._username || '').trim(), (data.library || '').trim(), null);
-      return { error: 'unknown action' };
-    } catch(err) {
-      return { error: err.message };
-    }
-  }
-  // Build response, inject capture update flag if needed, return as JSON
-  const responseObj = _buildResponseObj();
+  let data;
+  try { data = JSON.parse(e.postData.contents); }
+  catch(err) { data = null; }
+  const responseObj = data ? captureAction(config, data) : _captureFlags_(config, {}, { error: 'unreadable request' });
+  return ContentService.createTextOutput(JSON.stringify(responseObj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * captureAction (Core 19): one request from a bookmarklet, as a plain object. The bookmarklet window (CaptureWindow.html,
+ * served by the Capture web app) calls it through the web app's captureCall; bookmarklets from before the window, and
+ * the server, reach it through captureDoPost. Same actions and the same checks either way.
+ */
+function captureAction(config, data) {
+  data = data || {};
+  const obj = _captureRoute_(config, data);
+  // The window links to the dashboard (credential bookmarklets only; guests have no dashboard)
+  if (data.action === 'extract_and_preview' && !data.guest_key && data.credential === (config.credential || '') && config.dashUrl)
+    obj.dashboard = config.dashUrl;
+  return _captureFlags_(config, data, obj);
+}
+
+// Update notices. Every response says when the Capture web app is behind version.json (as before Core 19). The
+// bookmarklet's own number (bv, since bookmarklet 1, which opens the window) is compared with bibman_bookmarklet_version:
+// an older one is told to get the new bookmarklet. A bookmarklet without a number (the box drawn on the page, before the
+// window) can only show its "update available" strip, so that strip carries the message (not for guests: their old
+// bookmarklet never shows it).
+const BOOKMARKLET_ACTIONS = ['extract_and_preview', 'get_libraries', 'guest_info', 'list_tags', 'save_captured'];
+const OLD_BOOKMARKLET_NOTE = 'your bookmarklet is out of date and does not work on some sites (such as SciX). ' +
+  'Get the new one: BibMan dashboard → Utilities → Bookmarklet, drag the button to your bookmarks bar, then delete the old bookmark';
+function _captureFlags_(config, data, obj) {
   try {
     const updates = _checkForUpdates(
       config.frontendThinClientVersion || 1,
@@ -1521,14 +1509,86 @@ function captureDoPost(config, e) {
       config.linkedCoreVersion         || BIBMAN_CORE_LIBRARY_VERSION
     );
     if (updates.bookmarkletCaptureUpdateAvailable) {
-      responseObj.bibman_bookmarklet_capture_update_available = true;
-      responseObj.bibman_bookmarklet_capture_webapp_notes = updates.bookmarkletCaptureNotes || '';
+      obj.bibman_bookmarklet_capture_update_available = true;
+      obj.bibman_bookmarklet_capture_webapp_notes = updates.bookmarkletCaptureNotes || '';
+    }
+    const bv = parseInt(data.bv, 10) || 0, latest = updates.latestBookmarklet || 0;
+    if (latest > bv && BOOKMARKLET_ACTIONS.indexOf(data.action) > -1) {
+      if (bv) {
+        obj.bibman_bookmarklet_update_available = true;
+        obj.bibman_bookmarklet_notes = updates.bookmarkletNotes || '';
+      } else if (!data.guest_key) {
+        obj.bibman_bookmarklet_capture_update_available = true;
+        obj.bibman_bookmarklet_capture_webapp_notes = OLD_BOOKMARKLET_NOTE;
+      }
     }
   } catch(err) {
     Logger.log('_checkForUpdates error: ' + err.message);
   }
-  return ContentService.createTextOutput(JSON.stringify(responseObj))
-    .setMimeType(ContentService.MimeType.JSON);
+  return obj;
+}
+
+function _captureRoute_(config, data) {
+  try {
+    const credential = config.credential || '';
+    // ── get_libraries: no credential required ────────────────────────────
+    if (data.action === 'get_libraries') {
+      try {
+        const full = _captureGetLibrariesFull(config);
+        return { libraries: full.libraries || [], current: full.current || '' };
+      } catch(err) {
+        return { libraries: [], current: '', error: err.message };
+      }
+    }
+    // ── A guest bookmarklet (Core 12): only its own guest key, never the credential ──
+    if (data.guest_key) return _guestCapture_(config, data);
+    // ── All other actions require credential ──────────────────────────────
+    if (data.credential !== credential) { return { error: 'unauthorized' }; }
+    // ── extract_and_preview ───────────────────────────────────────────────
+    if (data.action === 'extract_and_preview') return _captureExtract_(config, data);
+    // ── upload_pdf: the server hands over a PDF to save in BibMan_PDFs/<library>/ (Core 10) ──
+    if (data.action === 'upload_pdf') {
+      try { return savePdfToDrive(config, data.pdf_base64, data.filename, data.library_name || ''); }
+      catch(err) { return { ok: false, error: err.message }; }
+    }
+    // ── find_pdf: is a PDF of this name already in BibMan_PDFs/<library>/? (used when re-saving) ──
+    if (data.action === 'find_pdf') {
+      try { return findPdfInDrive(config, data.filename, data.library_name || ''); }
+      catch(err) { return { ok: false, error: err.message }; }
+    }
+    // ── list_tags: the tags this person could use in the dashboard that are already used in this library (Core 11) ──
+    if (data.action === 'list_tags') {
+      const who = (data._username || '').trim(), lib = (data.library || '').trim();
+      if (!who || !lib) return { tags: [] };
+      try {
+        const labels = apiCall(config, 'GET', '/api/tags/labels', null, { library: lib, _u: who });
+        return { tags: (Array.isArray(labels) ? labels : []).map(function(l) { return { id: l.id, label: l.label, color: l.color }; }) };
+      } catch(err) { return { tags: [], error: err.message }; }
+    }
+    // ── save_captured ─────────────────────────────────────────────────────
+    if (data.action === 'save_captured') return _captureSave_(config, data, (data._username || '').trim(), (data.library || '').trim(), null);
+    return { error: 'unknown action' };
+  } catch(err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * captureWindowPage (Core 19): the bookmarklet's window. The bookmarklet opens this web app's address with ?capture=1
+ * and its details after the # (which never reach a server); the page itself (CaptureWindow.html) is fetched from GitHub
+ * at serve time, as the dashboard's Index.html is, so changes to the form need no redeployment.
+ */
+function captureWindowPage(config, params) {
+  try {
+    const resp = UrlFetchApp.fetch('https://raw.githubusercontent.com/pmarcum/BibMan/main/CaptureWindow.html?t=' + Date.now(),
+                                   { muteHttpExceptions: true, deadline: 10 });
+    if (resp.getResponseCode() === 200) return resp.getContentText();
+  } catch(err) {
+    Logger.log('BibManCore.captureWindowPage: GitHub fetch failed: ' + err.message);
+  }
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Add to BibMan</title></head>' +
+    '<body style="background:#17171a;color:#f7c97e;font-family:monospace;font-size:13px;padding:20px">' +
+    '<p>BibMan’s window could not be loaded from GitHub just now. Please close this window and click the bookmarklet again in a minute.</p></body></html>';
 }
 
 function _captureExtract_(config, data) {
