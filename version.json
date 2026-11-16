@@ -1,8 +1,8 @@
 {
-  "bibman_core_library_version": 17,
+  "bibman_core_library_version": 18,
   "bibman_frontend_thinclient_webapp_version": 21,
   "bibman_bookmarklet_capture_webapp_version": 17,
-  "bibman_core_library_notes": "v17: journals stored as a macro only when the journal classes define it (Science, Icarus as \\icarus, Astronomy and Computing by name); keys unchanged. In each web app: Libraries → BibManCore → select version 17, then Deploy → Manage deployments → Edit → New version",
+  "bibman_core_library_notes": "v18: papers are looked up on ADS only by a DOI, arXiv number (old forms such as astro-ph/0701517 too) or bibcode, and ADS's answer is used only if it carries that identifier. In each web app: Libraries → BibManCore → select version 18, then Deploy → Manage deployments → Edit → New version (the web apps' own numbers stay the same)",
   "bibman_frontend_thinclient_webapp_notes": "v21: select Core 17 and redeploy (Code.gs unchanged)",
   "bibman_bookmarklet_capture_webapp_notes": "v17: select Core 17 and redeploy (Code.gs unchanged)"
 }

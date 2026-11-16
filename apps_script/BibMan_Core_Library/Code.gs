@@ -75,7 +75,7 @@
 // Why not a Script Property: properties are not saved with a library version, so every web app would report the
 // newest number even while still running an older Core, and the "update Core" banner would never appear.
 // The old Script Property BIBMAN_CORE_LIBRARY_VERSION is no longer read and can be deleted.
-const BIBMAN_CORE_LIBRARY_VERSION = 17;
+const BIBMAN_CORE_LIBRARY_VERSION = 18;
 // ═══════════════════════════════════════════════════════════════════════════════
 // ── VERSION CHECK ─────────────────────────────────────────────────────────────
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -648,13 +648,42 @@ const ADS_SEARCH_URL = 'https://api.adsabs.harvard.edu/v1/search/query';
 const ADS_FIELDS     = 'bibcode,title,author,year,pub,volume,page,identifier,doi,abstract,pubdate,doctype,bibtex';
 
 /**
+ * _adsIdentifier (Core 18): what kind of identifier this is and how to ask ADS for it, or null when it is none of a
+ * DOI, an arXiv number (2101.00374, or the old form astro-ph/0701517) or a bibcode. Until Core 18 anything was sent to
+ * ADS as free text and the first answer taken: a bookmarklet that read only "astro" from astro-ph/0701517 added a
+ * paper by an author called Astro.
+ */
+function _adsIdentifier(identifier) {
+  let s = String(identifier || '').trim();
+  s = s.replace(/^https?:\/\/(dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
+  if (/^10\.\d{4,9}\/\S+$/.test(s)) return { kind: 'doi', value: s, q: 'doi:"' + s + '"' };
+  const ax = s.replace(/^arxiv:\s*/i, '').replace(/^https?:\/\/arxiv\.org\/(abs|pdf|html)\//i, '')
+              .replace(/\.pdf$/i, '').replace(/v\d+$/i, '');
+  if (/^\d{4}\.\d{4,5}$/.test(ax) || /^[a-z][a-z\-]*(\.[a-z]{2})?\/\d{7}$/i.test(ax))
+    return { kind: 'arxiv', value: ax, q: 'identifier:"arXiv:' + ax + '"' };
+  if (/^\d{4}\S{15}$/.test(s)) return { kind: 'bibcode', value: s, q: 'identifier:"' + s + '"' };
+  return null;
+}
+
+/** _adsDocHas: true when ADS's record really carries the identifier asked for (Core 18). */
+function _adsDocHas(doc, id) {
+  const low = x => String(x || '').toLowerCase();
+  const ids = (doc.identifier || []).map(low);
+  if (id.kind === 'doi')     return (doc.doi || []).map(low).indexOf(low(id.value)) > -1 || ids.indexOf(low(id.value)) > -1;
+  if (id.kind === 'arxiv')   return ids.indexOf('arxiv:' + low(id.value)) > -1 || ids.indexOf(low(id.value)) > -1;
+  return low(doc.bibcode) === low(id.value) || ids.indexOf(low(id.value)) > -1;
+}
+
+/**
  * lookupPaperByIdentifier: Resolve a DOI, arXiv ID, or ADS bibcode via ADS.
  * Returns a clean paper object ready to POST to /api/papers/add-manual,
- * or null if not found.
+ * or null if not found, or if the text is not one of those identifiers (Core 18).
  */
 function lookupPaperByIdentifier(config, identifier) {
   if (!config.adsToken) throw new Error('adsToken not provided in config');
-  const url = `${ADS_SEARCH_URL}?q=${encodeURIComponent(identifier)}&fl=${ADS_FIELDS}&rows=1`;
+  const id = _adsIdentifier(identifier);
+  if (!id) return null;
+  const url = `${ADS_SEARCH_URL}?q=${encodeURIComponent(id.q)}&fl=${ADS_FIELDS}&rows=1`;
   const options = {
     method:  'get',
     headers: { 'Authorization': `Bearer ${config.adsToken}` },
@@ -666,7 +695,7 @@ function lookupPaperByIdentifier(config, identifier) {
     throw new Error(`ADS returned HTTP ${response.getResponseCode()}`);
   }
   const docs = JSON.parse(response.getContentText()).response?.docs || [];
-  if (!docs.length) return null;
+  if (!docs.length || !_adsDocHas(docs[0], id)) return null;
   const paper = _adsDocToPaper(docs[0]);
   // The title as ADS's BibTeX export writes it, LaTeX kept (Core 15; ADS's lowered tilde becomes $\sim$ etc., see
   // adsTitleSymbols): ADS's search service gives a plain-text version (10^8 M_☉, z ~ 7, <~) that LaTeX misreads.
@@ -762,6 +791,7 @@ function searchAdsByTitle(config, title) {
  * addPaperByIdentifier: Full flow — ADS lookup then POST to backend.
  */
 function addPaperByIdentifier(config, identifier, library) {
+  if (!_adsIdentifier(identifier)) throw new Error(`Not a DOI, arXiv number or ADS bibcode: ${identifier}`);
   const paper = lookupPaperByIdentifier(config, identifier);
   if (!paper) throw new Error(`No paper found for: ${identifier}`);
   if (library) paper.library = library;

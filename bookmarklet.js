@@ -8,8 +8,9 @@
   function auth(o){if(g)o.guest_key=g;else o.credential=c;return JSON.stringify(o);}
   var url=window.location.href;
   var identifier=null;
-  var m=url.match(/arxiv\.org\/(?:pdf|abs|html)\/([\w.]+)/);
-  if(m)identifier=m[1].replace(/v\d+$/,'');
+  // arXiv numbers, new (2101.00374) and old (astro-ph/0701517, math.GT/0309136) forms
+  var m=url.match(/arxiv\.org\/(?:pdf|abs|html)\/(\d{4}\.\d{4,5}|[a-z][a-z\-]*(?:\.[A-Za-z]{2})?\/\d{7})/i);
+  if(m)identifier=m[1];
   if(!identifier){m=url.match(/link_gateway\/([^\/]+)\//);if(m)identifier=decodeURIComponent(m[1]);}
   if(!identifier){m=url.match(/\/abs\/([^\/\?#]+)/);if(m)identifier=decodeURIComponent(m[1]);}
   if(!identifier){

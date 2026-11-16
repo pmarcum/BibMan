@@ -1,5 +1,11 @@
 # Changelog
 
+## 16 November 2026 (later): arXiv numbers in the old form (Core 18)
+
+- **The bookmarklet recognizes old-style arXiv numbers** (`astro-ph/0701517`, `hep-th/9901001`, `math.GT/0309136`). It read only the letters before the hyphen ("astro"), and Core sent those to ADS as free text: a capture of Strong et al. 2007 added a cell-biology paper by an author called Astro. A bookmarklet gets the fix when it is dragged again from the dashboard.
+- **Core 18 looks a paper up on ADS only by a DOI, arXiv number or bibcode, and uses ADS's answer only if it carries that identifier.** Anything else goes to the page-reading path (bookmarklet) or is refused with a message (Add by identifier), so an older bookmarklet can't add a wrong paper either.
+- Core 18; the dashboard and Capture web apps select Core 18 and keep their numbers (21 and 17).
+
 ## 16 November 2026: conference venues
 
 - **The exports BibTeX reads write a conference paper's or book chapter's venue as `booktitle`** (`@inproceedings`, `@incollection`); styles printed these without the conference or book. The Refs-tab export is unchanged.
