@@ -1,5 +1,9 @@
 # Changelog
 
+## 15 November 2026: numbering rule
+
+- **A version number is a release of that project's own code.** The Frontend and Capture numbers go up only when their own code changes, not when a web app is redeployed to select a new Core; Core's number still equals its library version. Testing uses the library's development mode (HEAD) instead of cutting versions (MAINTENANCE.md, *Numbering rule*). Comments and docs only.
+
 ## 13 November 2026 (later): journals (Core 17)
 
 - **Journal macros the journal classes don't define are exported as names** (`\rmp` → Reviews of Modern Physics, `\sci` → Science, ...); they stopped the compile in AASTeX documents.

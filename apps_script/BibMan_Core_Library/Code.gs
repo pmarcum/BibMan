@@ -65,6 +65,7 @@
 // Bump BIBMAN_CORE_LIBRARY_VERSION each time you publish a new BibMan_Core library version.
 // Bump FRONTEND_THINCLIENT_VERSION each time Index.html needs to be updated by groups.
 // Bump BOOKMARKLET_CAPTURE_VERSION each time the capture webapp thin client needs to be updated.
+// A web app redeployed only to select a new Core keeps its number (MAINTENANCE.md, "Numbering rule").
 // All three numbers are checked against version.json on GitHub.
 //   Core logic change:   bump BIBMAN_CORE_LIBRARY_VERSION + bibman_core_library_version in version.json
 //   UI change:           bump FRONTEND_THINCLIENT_VERSION + bibman_frontend_thinclient_webapp_version in version.json
